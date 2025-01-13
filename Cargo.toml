@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 libc = "0.2.169"
 tempfile = "3.15.0"
+thiserror = "2.0.11"

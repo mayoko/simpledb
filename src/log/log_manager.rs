@@ -3,15 +3,24 @@ use crate::file::file_manager;
 use crate::file::page;
 
 use crate::log::log_iterator;
-use std::io;
+use std::{io, sync::Mutex};
+use thiserror::Error;
 
 pub struct LogManager<'a> {
     fm: &'a file_manager::FileManager,
     logfile: String,
-    log_page: page::Page,
-    current_block: blockid::BlockId,
-    latest_lsn: u64, // LSN = log sequence number
-    last_saved_lsn: u64,
+    log_page: Mutex<page::Page>,
+    current_block: Mutex<blockid::BlockId>,
+    latest_lsn: Mutex<u64>, // LSN = log sequence number
+    last_saved_lsn: Mutex<u64>,
+}
+
+#[derive(Error, Debug)]
+pub enum LogError {
+    #[error("Failed to acquire write lock")]
+    LockError,
+    #[error("I/O error: {0}")]
+    IoError(#[from] io::Error),
 }
 
 impl<'a> LogManager<'a> {
@@ -36,45 +45,75 @@ impl<'a> LogManager<'a> {
         Ok(LogManager {
             fm: fm,
             logfile: logfile.to_string(),
-            log_page: log_page,
-            current_block: current_block,
-            latest_lsn: latest_lsn,
-            last_saved_lsn: last_saved_lsn,
+            log_page: Mutex::new(log_page),
+            current_block: Mutex::new(current_block),
+            latest_lsn: Mutex::new(latest_lsn),
+            last_saved_lsn: Mutex::new(last_saved_lsn),
         })
     }
 
-    pub fn append(&mut self, logrec: &[u8]) -> Result<u64, io::Error> {
-        let mut boundary = self.log_page.get_int(0) as usize;
+    pub fn append(&self, logrec: &[u8]) -> Result<u64, LogError> {
+        // boundary 取得
+        let log_page = self.log_page.lock().map_err(|_| LogError::LockError)?;
+        let mut boundary = log_page.get_int(0) as usize;
+        drop(log_page);
+
+        // 今の block に書き込めなさそうなら新しい block を作る
         let integer_bytes = 4;
         let bytes_needed = logrec.len() + integer_bytes;
         if boundary < integer_bytes + bytes_needed {
             self.flush_all()?;
-            self.current_block = append_new_block(self.fm, &mut self.log_page, &self.logfile)?;
-            boundary = self.log_page.get_int(0) as usize;
+            let mut log_page = self.log_page.lock().map_err(|_| LogError::LockError)?;
+            let mut current_block = self.current_block.lock().map_err(|_| LogError::LockError)?;
+            *current_block = append_new_block(self.fm, &mut log_page, &self.logfile)?;
+            boundary = log_page.get_int(0) as usize;
         }
+
+        // logrec を書き込む
         let rec_pos = boundary - bytes_needed;
-        self.log_page.set_bytes(rec_pos, logrec);
-        self.log_page.set_int(0, rec_pos as i32);
-        self.latest_lsn += 1;
+        let mut log_page = self.log_page.lock().map_err(|_| LogError::LockError)?;
+        log_page.set_bytes(rec_pos, logrec);
+        log_page.set_int(0, rec_pos as i32);
 
-        Ok(self.latest_lsn)
+        // lsn の更新
+        let mut latest_lsn = self.latest_lsn.lock().map_err(|_| LogError::LockError)?;
+        *latest_lsn += 1;
+
+        Ok(*latest_lsn)
     }
 
-    pub fn iterator(&mut self) -> Result<log_iterator::LogIterator, io::Error> {
+    pub fn iterator(&self) -> Result<log_iterator::LogIterator, LogError> {
         self.flush_all()?;
-        log_iterator::LogIterator::new(self.fm, &self.current_block)
+        let current_block = self.current_block.lock().map_err(|_| LogError::LockError)?;
+        Ok(log_iterator::LogIterator::new(self.fm, &current_block)?)
     }
 
-    pub fn flush(&mut self, lsn: u64) -> Result<(), io::Error> {
-        if lsn > self.last_saved_lsn {
-            self.flush_all()?;
+    pub fn flush(&self, lsn: u64) -> Result<(), LogError> {
+        let last_saved_lsn = self
+            .last_saved_lsn
+            .lock()
+            .map_err(|_| LogError::LockError)?;
+        if lsn <= *last_saved_lsn {
+            return Ok(());
         }
+        self.flush_all()?;
         Ok(())
     }
 
-    fn flush_all(&mut self) -> Result<(), io::Error> {
-        self.fm.write(&self.current_block, &mut self.log_page)?;
-        self.last_saved_lsn = self.latest_lsn;
+    fn flush_all(&self) -> Result<(), LogError> {
+        let mut log_page = self.log_page.lock().map_err(|_| LogError::LockError)?;
+        let current_block = self.current_block.lock().map_err(|_| LogError::LockError)?;
+        self.fm.write(&current_block, &mut log_page)?;
+
+        let mut last_saved_lsn = self
+            .last_saved_lsn
+            .lock()
+            .map_err(|_| LogError::LockError)?;
+        *last_saved_lsn = self
+            .latest_lsn
+            .lock()
+            .map_err(|_| LogError::LockError)?
+            .clone();
         Ok(())
     }
 }
@@ -101,7 +140,7 @@ mod test_log_manager {
     fn test_log_manager() {
         let dir = tempfile::tempdir().unwrap();
         let mut fm = file_manager::FileManager::new(dir.path(), 400);
-        let mut log_manager = LogManager::new(&mut fm, "log_file").unwrap();
+        let log_manager = LogManager::new(&mut fm, "log_file").unwrap();
 
         // log_record がない場合
         let mut log_iter = log_manager.iterator().unwrap();
@@ -129,7 +168,7 @@ mod test_log_manager {
     fn test_many_logs() {
         let dir = tempfile::tempdir().unwrap();
         let mut fm = file_manager::FileManager::new(dir.path(), 400);
-        let mut log_manager = LogManager::new(&mut fm, "log_file").unwrap();
+        let log_manager = LogManager::new(&mut fm, "log_file").unwrap();
 
         for i in 0..100 {
             let log_record_str = format!("test log record {}", i);
