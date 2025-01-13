@@ -7,7 +7,7 @@ use std::io;
  * 最新のログから順番に読んでいくための iterator
  */
 pub struct LogIterator<'a> {
-    fm: &'a mut file_manager::FileManager,
+    fm: &'a file_manager::FileManager,
     block: blockid::BlockId,
     page: page::Page,
     current_pos: usize, // block 内部での位置
@@ -15,7 +15,7 @@ pub struct LogIterator<'a> {
 
 impl<'a> LogIterator<'a> {
     pub fn new(
-        fm: &'a mut file_manager::FileManager,
+        fm: &'a file_manager::FileManager,
         block: &blockid::BlockId,
     ) -> Result<LogIterator<'a>, io::Error> {
         let block_size = fm.block_size();

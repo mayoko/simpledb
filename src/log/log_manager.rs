@@ -6,7 +6,7 @@ use crate::log::log_iterator;
 use std::io;
 
 pub struct LogManager<'a> {
-    fm: &'a mut file_manager::FileManager,
+    fm: &'a file_manager::FileManager,
     logfile: String,
     log_page: page::Page,
     current_block: blockid::BlockId,
@@ -16,7 +16,7 @@ pub struct LogManager<'a> {
 
 impl<'a> LogManager<'a> {
     pub fn new(
-        fm: &'a mut file_manager::FileManager,
+        fm: &'a file_manager::FileManager,
         logfile: &str,
     ) -> Result<LogManager<'a>, io::Error> {
         let block_size = fm.block_size();
@@ -80,7 +80,7 @@ impl<'a> LogManager<'a> {
 }
 
 fn append_new_block(
-    fm: &mut file_manager::FileManager,
+    fm: &file_manager::FileManager,
     page: &mut page::Page,
     logfile: &str,
 ) -> Result<blockid::BlockId, io::Error> {

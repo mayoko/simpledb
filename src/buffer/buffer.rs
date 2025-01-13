@@ -1,8 +1,9 @@
 use crate::file::{blockid, file_manager, page};
 use crate::log::log_manager;
+use std::io;
 
 pub struct Buffer<'a> {
-    fm: &'a mut file_manager::FileManager,
+    fm: &'a file_manager::FileManager,
     lm: &'a mut log_manager::LogManager<'a>,
     contents: page::Page,
     block: Option<blockid::BlockId>, // None なら buffer は空
@@ -13,7 +14,7 @@ pub struct Buffer<'a> {
 
 impl<'a> Buffer<'a> {
     pub fn new(
-        fm: &'a mut file_manager::FileManager,
+        fm: &'a file_manager::FileManager,
         lm: &'a mut log_manager::LogManager<'a>,
     ) -> Buffer<'a> {
         let block_size = fm.block_size();
@@ -61,18 +62,20 @@ impl<'a> Buffer<'a> {
         self.txnum
     }
 
-    pub(crate) fn assign_to_block(&mut self, block: &blockid::BlockId) {
-        self.flush();
+    pub(crate) fn assign_to_block(&mut self, block: &blockid::BlockId) -> io::Result<()> {
+        self.flush()?;
         self.block = Some(block.clone());
-        self.fm.read(&block, &mut self.contents);
+        self.fm.read(&block, &mut self.contents)?;
         self.pins = 0;
+        Ok(())
     }
 
-    pub(crate) fn flush(&mut self) {
+    pub(crate) fn flush(&mut self) -> io::Result<()> {
         if self.txnum.is_some() {
             let lsn = self.lsn.unwrap_or(0);
-            self.lm.flush(lsn);
+            self.lm.flush(lsn)?;
             self.txnum = None;
         }
+        Ok(())
     }
 }
