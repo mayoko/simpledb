@@ -6,6 +6,7 @@ use std::{
     path,
     sync::Mutex,
 };
+use thiserror::Error;
 
 use super::blockid::BlockId;
 use super::page::Page;
@@ -15,6 +16,14 @@ pub struct FileManager {
     blocksize: usize,
     is_new: bool,
     open_files: Mutex<HashMap<String, fs::File>>,
+}
+
+#[derive(Error, Debug)]
+pub enum FileManagerError {
+    #[error("Failed to acquire write lock")]
+    LockError,
+    #[error("I/O error: {0}")]
+    IoError(#[from] io::Error),
 }
 
 impl FileManager {
@@ -46,16 +55,14 @@ impl FileManager {
         }
     }
 
-    pub fn read(&self, blk: &BlockId, p: &mut Page) -> Result<(), io::Error> {
+    pub fn read(&self, blk: &BlockId, p: &mut Page) -> Result<(), FileManagerError> {
         let blocksize = self.blocksize;
 
         self.cache_file(blk.file_name())?;
-        let mut open_files = self.open_files.lock().map_err(|_| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                "Failed to acquire write lock for file",
-            )
-        })?;
+        let mut open_files = self
+            .open_files
+            .lock()
+            .map_err(|_| FileManagerError::LockError)?;
         let file = open_files.get_mut(blk.file_name());
 
         match file {
@@ -64,19 +71,17 @@ impl FileManager {
                 file.read_exact(p.contents())?;
                 Ok(())
             }
-            None => Err(io::Error::new(io::ErrorKind::NotFound, "File not found")),
+            None => Err(file_not_found_error()),
         }
     }
 
-    pub fn write(&self, blk: &BlockId, p: &mut Page) -> Result<(), io::Error> {
+    pub fn write(&self, blk: &BlockId, p: &mut Page) -> Result<(), FileManagerError> {
         let blocksize = self.blocksize;
         self.cache_file(blk.file_name())?;
-        let mut open_files = self.open_files.lock().map_err(|_| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                "Failed to acquire write lock for file",
-            )
-        })?;
+        let mut open_files = self
+            .open_files
+            .lock()
+            .map_err(|_| FileManagerError::LockError)?;
         let file = open_files.get_mut(blk.file_name());
 
         match file {
@@ -87,22 +92,20 @@ impl FileManager {
                 file.write(p.contents())?;
                 Ok(())
             }
-            None => Err(io::Error::new(io::ErrorKind::NotFound, "File not found")),
+            None => Err(file_not_found_error()),
         }
     }
 
-    pub fn append(&self, filename: &str) -> Result<BlockId, io::Error> {
+    pub fn append(&self, filename: &str) -> Result<BlockId, FileManagerError> {
         let blknum = self.length(filename)?;
         let block = BlockId::new(filename, blknum);
         let blocksize = self.blocksize;
 
         self.cache_file(filename)?;
-        let mut open_files = self.open_files.lock().map_err(|_| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                "Failed to acquire write lock for file",
-            )
-        })?;
+        let mut open_files = self
+            .open_files
+            .lock()
+            .map_err(|_| FileManagerError::LockError)?;
         let file = open_files.get_mut(filename);
 
         match file {
@@ -114,25 +117,23 @@ impl FileManager {
 
                 Ok(block)
             }
-            None => Err(io::Error::new(io::ErrorKind::NotFound, "File not found")),
+            None => Err(file_not_found_error()),
         }
     }
 
-    pub fn length(&self, filename: &str) -> Result<usize, io::Error> {
+    pub fn length(&self, filename: &str) -> Result<usize, FileManagerError> {
         self.cache_file(filename)?;
-        let open_files = self.open_files.lock().map_err(|_| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                "Failed to acquire write lock for file",
-            )
-        })?;
+        let open_files = self
+            .open_files
+            .lock()
+            .map_err(|_| FileManagerError::LockError)?;
         let file = open_files.get(filename);
         match file {
             Some(file) => {
                 let metadata = file.metadata()?;
                 Ok((metadata.len() / self.blocksize as u64) as usize)
             }
-            None => Err(io::Error::new(io::ErrorKind::NotFound, "File not found")),
+            None => Err(file_not_found_error()),
         }
     }
 
@@ -144,13 +145,11 @@ impl FileManager {
         self.blocksize
     }
 
-    fn cache_file(&self, filename: &str) -> Result<(), io::Error> {
-        let mut open_files = self.open_files.lock().map_err(|_| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                "Failed to acquire read lock for open_files",
-            )
-        })?;
+    fn cache_file(&self, filename: &str) -> Result<(), FileManagerError> {
+        let mut open_files = self
+            .open_files
+            .lock()
+            .map_err(|_| FileManagerError::LockError)?;
         let contains_key = open_files.contains_key(filename);
         if !contains_key {
             let file = fs::OpenOptions::new()
@@ -163,6 +162,10 @@ impl FileManager {
         }
         Ok(())
     }
+}
+
+fn file_not_found_error() -> FileManagerError {
+    FileManagerError::IoError(io::Error::new(io::ErrorKind::NotFound, "File not found"))
 }
 
 #[cfg(test)]

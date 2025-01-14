@@ -19,6 +19,8 @@ enum BufferError {
     IoError(#[from] io::Error),
     #[error("Error from log manager: {0}")]
     LogError(#[from] log_manager::LogError),
+    #[error("Error from file manager: {0}")]
+    FileManagerError(#[from] file_manager::FileManagerError),
 }
 
 impl<'a> Buffer<'a> {

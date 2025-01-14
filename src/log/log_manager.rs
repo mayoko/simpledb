@@ -21,13 +21,15 @@ pub enum LogError {
     LockError,
     #[error("I/O error: {0}")]
     IoError(#[from] io::Error),
+    #[error("Error from file manager: {0}")]
+    FileManagerError(#[from] file_manager::FileManagerError),
 }
 
 impl<'a> LogManager<'a> {
     pub fn new(
         fm: &'a file_manager::FileManager,
         logfile: &str,
-    ) -> Result<LogManager<'a>, io::Error> {
+    ) -> Result<LogManager<'a>, LogError> {
         let block_size = fm.block_size();
         let mut log_page = page::Page::new_from_size(block_size);
 
@@ -54,9 +56,10 @@ impl<'a> LogManager<'a> {
 
     pub fn append(&self, logrec: &[u8]) -> Result<u64, LogError> {
         // boundary 取得
-        let log_page = self.log_page.lock().map_err(|_| LogError::LockError)?;
-        let mut boundary = log_page.get_int(0) as usize;
-        drop(log_page);
+        let mut boundary = {
+            let log_page = self.log_page.lock().map_err(|_| LogError::LockError)?;
+            log_page.get_int(0) as usize
+        };
 
         // 今の block に書き込めなさそうなら新しい block を作る
         let integer_bytes = 4;
@@ -122,7 +125,7 @@ fn append_new_block(
     fm: &file_manager::FileManager,
     page: &mut page::Page,
     logfile: &str,
-) -> Result<blockid::BlockId, io::Error> {
+) -> Result<blockid::BlockId, LogError> {
     let new_block = fm.append(logfile)?;
 
     let block_size = fm.block_size();

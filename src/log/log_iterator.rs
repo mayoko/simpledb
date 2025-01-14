@@ -1,7 +1,6 @@
 use crate::file::blockid;
 use crate::file::file_manager;
 use crate::file::page;
-use std::io;
 
 /**
  * 最新のログから順番に読んでいくための iterator
@@ -17,7 +16,7 @@ impl<'a> LogIterator<'a> {
     pub fn new(
         fm: &'a file_manager::FileManager,
         block: &blockid::BlockId,
-    ) -> Result<LogIterator<'a>, io::Error> {
+    ) -> Result<LogIterator<'a>, file_manager::FileManagerError> {
         let block_size = fm.block_size();
         let mut log_iterator = LogIterator {
             fm: fm,
@@ -30,7 +29,10 @@ impl<'a> LogIterator<'a> {
         Ok(log_iterator)
     }
 
-    fn move_to_block(&mut self, block: &blockid::BlockId) -> Result<(), io::Error> {
+    fn move_to_block(
+        &mut self,
+        block: &blockid::BlockId,
+    ) -> Result<(), file_manager::FileManagerError> {
         self.block = block.clone();
         self.fm.read(&self.block, &mut self.page)?;
         let boundary = self.page.get_int(0) as usize;
