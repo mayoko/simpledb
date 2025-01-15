@@ -68,14 +68,14 @@ impl FileManager {
         match file {
             Some(file) => {
                 file.seek(io::SeekFrom::Start(blk.number() as u64 * blocksize as u64))?;
-                file.read_exact(p.contents())?;
+                file.read(p.contents_mut())?;
                 Ok(())
             }
             None => Err(file_not_found_error()),
         }
     }
 
-    pub fn write(&self, blk: &BlockId, p: &mut Page) -> Result<(), FileManagerError> {
+    pub fn write(&self, blk: &BlockId, p: &Page) -> Result<(), FileManagerError> {
         let blocksize = self.blocksize;
         self.cache_file(blk.file_name())?;
         let mut open_files = self

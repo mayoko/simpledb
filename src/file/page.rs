@@ -54,8 +54,12 @@ impl Page {
         return 4 + (strlen * 6);
     }
 
-    pub(crate) fn contents(&mut self) -> &mut Vec<u8> {
+    pub(crate) fn contents_mut(&mut self) -> &mut Vec<u8> {
         &mut self.bb
+    }
+
+    pub(crate) fn contents(&self) -> &Vec<u8> {
+        &self.bb
     }
 }
 
