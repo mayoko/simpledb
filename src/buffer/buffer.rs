@@ -14,7 +14,7 @@ pub struct Buffer<'a> {
 }
 
 #[derive(Error, Debug)]
-enum BufferError {
+pub(crate) enum BufferError {
     #[error("I/O error: {0}")]
     IoError(#[from] io::Error),
     #[error("Error from log manager: {0}")]
@@ -81,10 +81,12 @@ impl<'a> Buffer<'a> {
         Ok(())
     }
 
-    pub(crate) fn flush(&mut self) -> Result<(), BufferError> {
-        if self.txnum.is_some() {
+    pub(crate) fn flush(&mut self) -> Result<(), log_manager::LogError> {
+        if self.block.is_some() && self.txnum.is_some() {
             let lsn = self.lsn.unwrap_or(0);
             self.lm.flush(lsn)?;
+            self.fm
+                .write(self.block.as_ref().unwrap(), &self.contents)?;
             self.txnum = None;
         }
         Ok(())
