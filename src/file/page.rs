@@ -9,8 +9,8 @@ impl Page {
         }
     }
 
-    pub fn new_from_vec(b: Vec<u8>) -> Page {
-        Page { bb: b }
+    pub fn new_from_vec(b: &Vec<u8>) -> Page {
+        Page { bb: b.clone() }
     }
 
     pub fn get_int(&self, offset: usize) -> i32 {

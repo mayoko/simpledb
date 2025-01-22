@@ -137,6 +137,8 @@ fn append_new_block(
 
 #[cfg(test)]
 mod test_log_manager {
+    use crate::log;
+
     use super::*;
 
     #[test]
@@ -165,6 +167,10 @@ mod test_log_manager {
         let mut log_iter = log_manager.iterator().unwrap();
         assert_eq!(log_iter.next(), Some(next_log_record.to_vec()));
         assert_eq!(log_iter.next(), Some(log_record.to_vec()));
+
+        let mut log_rev_iter = log_iterator::LogReverseIterator::new(&log_iter).unwrap();
+        assert_eq!(log_rev_iter.next(), Some(log_record.to_vec()));
+        assert_eq!(log_rev_iter.next(), Some(next_log_record.to_vec()));
     }
 
     #[test]
@@ -185,6 +191,13 @@ mod test_log_manager {
             let log_record_str = format!("test log record {}", i);
             let log_record = log_record_str.as_bytes();
             assert_eq!(log_iter.next(), Some(log_record.to_vec()));
+        }
+
+        let mut log_rev_iter = log_iterator::LogReverseIterator::new(&log_iter).unwrap();
+        for i in 0..100 {
+            let log_record_str = format!("test log record {}", i);
+            let log_record = log_record_str.as_bytes();
+            assert_eq!(log_rev_iter.next(), Some(log_record.to_vec()));
         }
     }
 }
