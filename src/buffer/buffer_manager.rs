@@ -226,7 +226,7 @@ mod test_buffer_manager {
             .unwrap();
         {
             let mut buf = buf_lock.lock().unwrap();
-            let page = buf.contents();
+            let page = buf.contents_mut();
             page.set_int(0, 123);
             buf.set_modified(1, Some(0));
         }
@@ -235,7 +235,7 @@ mod test_buffer_manager {
         let pinned_buf_lock = buffer_manager
             .pin(&blockid::BlockId::new("testfile", 0))
             .unwrap();
-        let mut pinned_buf = pinned_buf_lock.lock().unwrap();
+        let pinned_buf = pinned_buf_lock.lock().unwrap();
         let pinned_page = pinned_buf.contents();
         assert_eq!(pinned_page.get_int(0), 123);
     }
@@ -257,7 +257,7 @@ mod test_buffer_manager {
         // buffer に書き込む
         {
             let mut buf = buf0.lock().unwrap();
-            let page = buf.contents();
+            let page = buf.contents_mut();
             page.set_int(0, 123);
             buf.set_modified(1, Some(0));
         }
@@ -303,7 +303,7 @@ mod test_buffer_manager {
         // buffer に書き込む
         {
             let mut buf = buf0.lock().unwrap();
-            let page = buf.contents();
+            let page = buf.contents_mut();
             page.set_int(0, 123);
             buf.set_modified(1, Some(0));
         }

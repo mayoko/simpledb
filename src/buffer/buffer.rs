@@ -40,8 +40,12 @@ impl<'a> Buffer<'a> {
         }
     }
 
-    pub fn contents(&mut self) -> &mut page::Page {
+    pub fn contents_mut(&mut self) -> &mut page::Page {
         &mut self.contents
+    }
+
+    pub fn contents(&self) -> &page::Page {
+        &self.contents
     }
 
     pub fn block(&self) -> Option<&blockid::BlockId> {
