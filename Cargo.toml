@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0.95"
+dashmap = "6.1.0"
 libc = "0.2.169"
 tempfile = "3.15.0"
 thiserror = "2.0.11"
