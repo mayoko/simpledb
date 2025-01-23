@@ -8,6 +8,14 @@ use crate::log::log_manager;
 
 const MAX_PIN_WAIT_TIME_MS: u64 = 10_000; // 10 seconds
 
+/**
+ * block (disk 上のデータ) を page を用いて操作できる Buffer を、pool として管理するクラス
+ *
+ * クライアントは、pin をすることで、参照したい block を Buffer を通して操作し、操作が終わったら unpin を行って不要になったことを通知する.
+ * また、flush_all を呼ぶことで、buffer pool に書き込まれた内容を block に書き込み、永続性を保証することができる.
+ *
+ * プログラム全体で一つしかない想定
+ */
 pub struct BufferManager<'a> {
     buffer_pool: Vec<Arc<Mutex<buffer::Buffer<'a>>>>,
     num_available: Arc<(Mutex<usize>, Condvar)>,
@@ -48,6 +56,7 @@ impl<'a> BufferManager<'a> {
         }
     }
 
+    // Buffer にある空きの buffer の数を返す
     pub fn available(&self) -> Result<usize, BufferManagerError> {
         let (value, _) = &*self.num_available;
         Ok(value
@@ -56,6 +65,7 @@ impl<'a> BufferManager<'a> {
             .clone())
     }
 
+    // buffer pool に書き込まれた内容を block い書き込み、永続性を保証する
     pub fn flush_all(&self) -> Result<(), BufferManagerError> {
         for buf_lock in &self.buffer_pool {
             let mut buf = buf_lock.lock().map_err(|_| BufferManagerError::LockError)?;
@@ -66,6 +76,7 @@ impl<'a> BufferManager<'a> {
         Ok(())
     }
 
+    // 不要になった buffer を pin から外す
     pub fn unpin(&self, buf: Arc<Mutex<buffer::Buffer>>) -> Result<(), BufferManagerError> {
         let mut buf = buf.lock().map_err(|_| BufferManagerError::LockError)?;
         buf.unpin();
@@ -78,6 +89,8 @@ impl<'a> BufferManager<'a> {
         Ok(())
     }
 
+    // 必要になる buffer を pin する.
+    // max_pin_wait_time_ms まで buffer が確保できない場合、エラーを返す
     pub fn pin(
         &'a self,
         blk: &blockid::BlockId,
@@ -85,6 +98,7 @@ impl<'a> BufferManager<'a> {
         let start = time::Instant::now();
         let mut buff = self.try_to_pin(blk)?;
         while buff.is_none() && get_waiting_time(start) < self.max_pin_wait_time_ms {
+            // buffer が確保できなかった場合、max_pin_wait_time_ms まで待つ
             let (num_available_lock, cond) = &*self.num_available;
             let num_available = num_available_lock
                 .lock()
@@ -95,6 +109,7 @@ impl<'a> BufferManager<'a> {
                     time::Duration::from_millis(self.max_pin_wait_time_ms),
                 )
                 .map_err(|_| BufferManagerError::PinError)?;
+            // buffer が空いた通知が来たので、再度 buffer 確保を試みる
             buff = self.try_to_pin(blk)?;
         }
         match buff {
@@ -103,6 +118,8 @@ impl<'a> BufferManager<'a> {
         }
     }
 
+    // buffer pool に block を割り当てを試みる
+    // 割り当てられなかった場合、None を返す
     fn try_to_pin(
         &'a self,
         blk: &blockid::BlockId,
@@ -111,10 +128,12 @@ impl<'a> BufferManager<'a> {
         let maybe_buf_lock = match maybe_buf_lock {
             Some(buf_lock) => Some(buf_lock),
             None => {
+                // buffer pool に block を参照している buffer が存在しない場合、pin されていない buffer から確保を試みる
                 let maybe_buf_lock = self.choose_unpinned_buffer()?;
                 match maybe_buf_lock {
                     None => None,
                     Some(buf_lock) => {
+                        // pin できる buffer が見つかった場合、その buffer に block を割り当てる
                         let mut buf = buf_lock.lock().map_err(|_| BufferManagerError::LockError)?;
                         buf.assign_to_block(blk)?;
                         Some(buf_lock.clone())
@@ -126,11 +145,13 @@ impl<'a> BufferManager<'a> {
             Some(buf_lock) => {
                 let mut buf = buf_lock.lock().map_err(|_| BufferManagerError::LockError)?;
                 if !buf.is_pinned() {
+                    // pin する予定の buffer がこれ以前に pin されていない場合、この pin により available な buffer が一つ減ったことを意味する
                     let (value, _) = &*self.num_available;
                     let mut num_available =
                         value.lock().map_err(|_| BufferManagerError::LockError)?;
                     *num_available -= 1;
                 }
+
                 buf.pin();
                 Ok(Some(buf_lock.clone()))
             }
@@ -138,6 +159,7 @@ impl<'a> BufferManager<'a> {
         }
     }
 
+    // すでに buffer で保持している block の pin を要求された場合、その buffer を返す
     fn find_existing_buffer(
         &'a self,
         blk: &blockid::BlockId,
@@ -153,6 +175,8 @@ impl<'a> BufferManager<'a> {
         Ok(None)
     }
 
+    // buffer pool から pin されていない buffer を選択する
+    // pin されていない buffer が存在しない場合は None を返す
     fn choose_unpinned_buffer(
         &'a self,
     ) -> Result<Option<Arc<Mutex<buffer::Buffer<'a>>>>, BufferManagerError> {

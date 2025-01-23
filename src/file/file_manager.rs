@@ -11,6 +11,12 @@ use thiserror::Error;
 use super::blockid::BlockId;
 use super::page::Page;
 
+/**
+ * simpledb では、block の中身は page を通して読み書きされる。
+ * その読み書きの直接的な interface を提供するクラス
+ *
+ * file の中に block を連続して配置することで block を扱っているため、名前を FileManager としている
+ */
 pub struct FileManager {
     db_directory: path::PathBuf,
     blocksize: usize,
@@ -55,6 +61,7 @@ impl FileManager {
         }
     }
 
+    // ブロックの内容を page に読み込む
     pub fn read(&self, blk: &BlockId, p: &mut Page) -> Result<(), FileManagerError> {
         let blocksize = self.blocksize;
 
@@ -75,6 +82,7 @@ impl FileManager {
         }
     }
 
+    // page の内容を block に書き込む
     pub fn write(&self, blk: &BlockId, p: &Page) -> Result<(), FileManagerError> {
         let blocksize = self.blocksize;
         self.cache_file(blk.file_name())?;
@@ -96,6 +104,7 @@ impl FileManager {
         }
     }
 
+    // ファイルの末尾に新しいブロックを追加する
     pub fn append(&self, filename: &str) -> Result<BlockId, FileManagerError> {
         let blknum = self.length(filename)?;
         let block = BlockId::new(filename, blknum);

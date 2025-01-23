@@ -3,6 +3,14 @@ use crate::log::log_manager;
 use std::io;
 use thiserror::Error;
 
+/**
+ * block (disk 上のデータ) を page を用いて適切に管理するためのクラス
+ *
+ * 以下のような機能を持つ:
+ * - block の内容を page を通して読み書きする
+ * - block が変更されたかどうかの追跡 (log sequence number と transaction number を用いる)
+ * - いくつのクライアントがこの buffer を pin しているかの追跡
+ */
 pub struct Buffer<'a> {
     fm: &'a file_manager::FileManager,
     lm: &'a log_manager::LogManager<'a>,
@@ -55,16 +63,19 @@ impl<'a> Buffer<'a> {
         }
     }
 
+    // 更新を行ったことを記録する
     // update に対して log record を書き込まない場合は lsn が None になる
     pub fn set_modified(&mut self, txnum: u64, lsn: Option<u64>) {
         self.txnum = Some(txnum);
         self.lsn = lsn;
     }
 
+    // buffer を通して block の読み書きをしているクライアントの数を追加する
     pub fn pin(&mut self) {
         self.pins += 1;
     }
 
+    // buffer を通して block の読み書きをしているクライアントの数を減らす
     pub fn unpin(&mut self) {
         self.pins -= 1;
     }
@@ -77,6 +88,7 @@ impl<'a> Buffer<'a> {
         self.txnum
     }
 
+    // buffer が参照する block を変更する
     pub(crate) fn assign_to_block(&mut self, block: &blockid::BlockId) -> Result<(), BufferError> {
         self.flush()?;
         self.block = Some(block.clone());
@@ -85,6 +97,7 @@ impl<'a> Buffer<'a> {
         Ok(())
     }
 
+    // buffer が参照する block に対して行われた変更を書き込み、永続性を保証する
     pub(crate) fn flush(&mut self) -> Result<(), log_manager::LogError> {
         if self.block.is_some() && self.txnum.is_some() {
             let lsn = self.lsn.unwrap_or(0);
