@@ -209,7 +209,6 @@ fn get_waiting_time(start: time::Instant) -> u64 {
 #[cfg(test)]
 mod lock_table_test {
     use super::*;
-    use core::hash;
     use std::sync::Arc;
     use std::thread;
 

@@ -1,5 +1,6 @@
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::file::blockid::BlockId;
 
@@ -10,13 +11,13 @@ use super::lock_table::{LockTable, LockTableError};
  *
  * Transaction の中で管理すれば良いだけなので、LockTable とは異なり、thread 間での lock は考慮しなくて良い
  */
-pub struct ConcurrencyManager<'a> {
-    lock_table: &'a LockTable,
+pub struct ConcurrencyManager {
+    lock_table: Arc<LockTable>,
     locks: HashMap<BlockId, LockType>,
 }
 
-impl<'a> ConcurrencyManager<'a> {
-    pub fn new(lock_table: &'a LockTable) -> ConcurrencyManager<'a> {
+impl ConcurrencyManager {
+    pub fn new(lock_table: Arc<LockTable>) -> ConcurrencyManager {
         ConcurrencyManager {
             lock_table,
             locks: HashMap::new(),
@@ -83,9 +84,9 @@ mod tests {
 
     #[test]
     fn test_concurrency_manager() {
-        let lock_table = LockTable::new(Some(10));
-        let mut cm1 = ConcurrencyManager::new(&lock_table);
-        let mut cm2 = ConcurrencyManager::new(&lock_table);
+        let lock_table = Arc::new(LockTable::new(Some(10)));
+        let mut cm1 = ConcurrencyManager::new(lock_table.clone());
+        let mut cm2 = ConcurrencyManager::new(lock_table);
 
         let block = BlockId::new("testfile", 0);
 

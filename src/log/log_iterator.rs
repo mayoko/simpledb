@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::constants::INTEGER_BYTE_LEN;
 use crate::file::blockid;
 use crate::file::file_manager;
@@ -6,8 +8,8 @@ use crate::file::page;
 /**
  * 最新のログから順番に読んでいくための iterator
  */
-pub struct LogIterator<'a> {
-    fm: &'a file_manager::FileManager,
+pub struct LogIterator {
+    fm: Arc<file_manager::FileManager>,
     block: blockid::BlockId,
     page: page::Page,
     current_pos: usize, // block 内部での位置
@@ -16,19 +18,19 @@ pub struct LogIterator<'a> {
 /**
  * ログを逆順に読むための iterator
  */
-pub struct LogReverseIterator<'a> {
-    fm: &'a file_manager::FileManager,
+pub struct LogReverseIterator {
+    fm: Arc<file_manager::FileManager>,
     block: blockid::BlockId,
     page: page::Page,
     rec_pos_list: Vec<usize>,   // log record の開始地点のリスト
     current_idx: Option<usize>, // rec_pos_list の index. 指すべきものがない場合 (rec_pos_list が空の場合) は None
 }
 
-impl<'a> LogIterator<'a> {
+impl LogIterator {
     pub fn new(
-        fm: &'a file_manager::FileManager,
+        fm: Arc<file_manager::FileManager>,
         block: &blockid::BlockId,
-    ) -> Result<LogIterator<'a>, file_manager::FileManagerError> {
+    ) -> Result<LogIterator, file_manager::FileManagerError> {
         let block_size = fm.block_size();
         let mut log_iterator = LogIterator {
             fm: fm,
@@ -53,7 +55,7 @@ impl<'a> LogIterator<'a> {
     }
 }
 
-impl Iterator for LogIterator<'_> {
+impl Iterator for LogIterator {
     type Item = Vec<u8>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -77,19 +79,19 @@ impl Iterator for LogIterator<'_> {
     }
 }
 
-impl<'a> LogReverseIterator<'a> {
+impl LogReverseIterator {
     /**
      * LogIterator から逆順の iterator を作成する
      */
-    pub fn new(iter: &LogIterator<'a>) -> Result<Self, file_manager::FileManagerError> {
-        let rec_pos_list = Self::construct_rec_pos_list(iter.current_pos, &iter.block, iter.fm)?;
+    pub fn new(iter: &LogIterator) -> Result<Self, file_manager::FileManagerError> {
+        let rec_pos_list = Self::construct_rec_pos_list(iter.current_pos, &iter.block, &iter.fm)?;
         let current_idx = if rec_pos_list.is_empty() {
             None
         } else {
             Some(rec_pos_list.len() - 1)
         };
         Ok(LogReverseIterator {
-            fm: iter.fm,
+            fm: iter.fm.clone(),
             block: iter.block.clone(),
             page: page::Page::new_from_vec(iter.page.contents()),
             rec_pos_list,
@@ -100,7 +102,7 @@ impl<'a> LogReverseIterator<'a> {
     fn construct_rec_pos_list(
         pos: usize,
         block: &blockid::BlockId,
-        fm: &'a file_manager::FileManager,
+        fm: &file_manager::FileManager,
     ) -> Result<Vec<usize>, file_manager::FileManagerError> {
         let mut rec_pos_list = Vec::new();
         let mut page = page::Page::new_from_size(fm.block_size());
@@ -121,7 +123,7 @@ impl<'a> LogReverseIterator<'a> {
     ) -> Result<(), file_manager::FileManagerError> {
         self.block = block.clone();
         self.fm.read(&self.block, &mut self.page)?;
-        self.rec_pos_list = Self::construct_rec_pos_list(self.fm.block_size(), &block, self.fm)?;
+        self.rec_pos_list = Self::construct_rec_pos_list(self.fm.block_size(), &block, &self.fm)?;
         self.current_idx = if self.rec_pos_list.is_empty() {
             None
         } else {
@@ -131,7 +133,7 @@ impl<'a> LogReverseIterator<'a> {
     }
 }
 
-impl Iterator for LogReverseIterator<'_> {
+impl Iterator for LogReverseIterator {
     type Item = Vec<u8>;
 
     fn next(&mut self) -> Option<Self::Item> {

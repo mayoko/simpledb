@@ -3,7 +3,10 @@ use crate::file::file_manager;
 use crate::file::page;
 
 use crate::log::log_iterator;
-use std::{io, sync::Mutex};
+use std::{
+    io,
+    sync::{Arc, Mutex},
+};
 use thiserror::Error;
 
 /**
@@ -12,8 +15,8 @@ use thiserror::Error;
  *
  * このクラスのインスタンスはプログラム中に一つだけ存在する
  */
-pub struct LogManager<'a> {
-    fm: &'a file_manager::FileManager,
+pub struct LogManager {
+    fm: Arc<file_manager::FileManager>,
     logfile: String,
     log_page: Mutex<page::Page>,
     current_block: Mutex<blockid::BlockId>,
@@ -31,17 +34,14 @@ pub enum LogError {
     FileManagerError(#[from] file_manager::FileManagerError),
 }
 
-impl<'a> LogManager<'a> {
-    pub fn new(
-        fm: &'a file_manager::FileManager,
-        logfile: &str,
-    ) -> Result<LogManager<'a>, LogError> {
+impl LogManager {
+    pub fn new(fm: Arc<file_manager::FileManager>, logfile: &str) -> Result<LogManager, LogError> {
         let block_size = fm.block_size();
         let mut log_page = page::Page::new_from_size(block_size);
 
         let log_size = fm.length(logfile)?;
         let current_block = if log_size == 0 {
-            append_new_block(fm, &mut log_page, logfile)?
+            append_new_block(&fm, &mut log_page, logfile)?
         } else {
             let current_block = blockid::BlockId::new(logfile, log_size - 1);
             fm.read(&current_block, &mut log_page)?;
@@ -79,7 +79,7 @@ impl<'a> LogManager<'a> {
             self.flush_all()?;
             let mut log_page = self.log_page.lock().map_err(|_| LogError::LockError)?;
             let mut current_block = self.current_block.lock().map_err(|_| LogError::LockError)?;
-            *current_block = append_new_block(self.fm, &mut log_page, &self.logfile)?;
+            *current_block = append_new_block(&self.fm, &mut log_page, &self.logfile)?;
             boundary = log_page.get_int(0) as usize;
         }
 
@@ -102,7 +102,10 @@ impl<'a> LogManager<'a> {
     pub fn iterator(&self) -> Result<log_iterator::LogIterator, LogError> {
         self.flush_all()?;
         let current_block = self.current_block.lock().map_err(|_| LogError::LockError)?;
-        Ok(log_iterator::LogIterator::new(self.fm, &current_block)?)
+        Ok(log_iterator::LogIterator::new(
+            self.fm.clone(),
+            &current_block,
+        )?)
     }
 
     /**
@@ -157,15 +160,13 @@ fn append_new_block(
 
 #[cfg(test)]
 mod test_log_manager {
-    use crate::log;
-
     use super::*;
 
     #[test]
     fn test_log_manager() {
         let dir = tempfile::tempdir().unwrap();
-        let mut fm = file_manager::FileManager::new(dir.path(), 400);
-        let log_manager = LogManager::new(&mut fm, "log_file").unwrap();
+        let fm = file_manager::FileManager::new(dir.path(), 400);
+        let log_manager = LogManager::new(Arc::new(fm), "log_file").unwrap();
 
         // log_record がない場合
         let mut log_iter = log_manager.iterator().unwrap();
@@ -196,8 +197,8 @@ mod test_log_manager {
     #[test]
     fn test_many_logs() {
         let dir = tempfile::tempdir().unwrap();
-        let mut fm = file_manager::FileManager::new(dir.path(), 400);
-        let log_manager = LogManager::new(&mut fm, "log_file").unwrap();
+        let fm = file_manager::FileManager::new(dir.path(), 400);
+        let log_manager = LogManager::new(Arc::new(fm), "log_file").unwrap();
 
         for i in 0..100 {
             let log_record_str = format!("test log record {}", i);

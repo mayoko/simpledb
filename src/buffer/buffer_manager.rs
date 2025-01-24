@@ -16,8 +16,8 @@ const MAX_PIN_WAIT_TIME_MS: u64 = 10_000; // 10 seconds
  *
  * プログラム全体で一つしかない想定
  */
-pub struct BufferManager<'a> {
-    buffer_pool: Vec<Arc<Mutex<buffer::Buffer<'a>>>>,
+pub struct BufferManager {
+    buffer_pool: Vec<Arc<Mutex<buffer::Buffer>>>,
     num_available: Arc<(Mutex<usize>, Condvar)>,
     max_pin_wait_time_ms: u64,
 }
@@ -34,17 +34,20 @@ pub enum BufferManagerError {
     LogError(#[from] log_manager::LogError),
 }
 
-impl<'a> BufferManager<'a> {
+impl BufferManager {
     pub fn new(
-        fm: &'a file_manager::FileManager,
-        lm: &'a log_manager::LogManager<'a>,
+        fm: Arc<file_manager::FileManager>,
+        lm: Arc<log_manager::LogManager>,
         num_buffs: usize,
         max_pin_wait_time_ms: Option<u64>,
-    ) -> BufferManager<'a> {
+    ) -> BufferManager {
         let mut buffer_pool = Vec::new();
         buffer_pool.reserve(num_buffs);
         for _ in 0..num_buffs {
-            buffer_pool.push(Arc::new(Mutex::new(buffer::Buffer::new(fm, lm))));
+            buffer_pool.push(Arc::new(Mutex::new(buffer::Buffer::new(
+                fm.clone(),
+                lm.clone(),
+            ))));
         }
         BufferManager {
             buffer_pool: buffer_pool,
@@ -92,9 +95,9 @@ impl<'a> BufferManager<'a> {
     // 必要になる buffer を pin する.
     // max_pin_wait_time_ms まで buffer が確保できない場合、エラーを返す
     pub fn pin(
-        &'a self,
+        &self,
         blk: &blockid::BlockId,
-    ) -> Result<Arc<Mutex<buffer::Buffer<'a>>>, BufferManagerError> {
+    ) -> Result<Arc<Mutex<buffer::Buffer>>, BufferManagerError> {
         let start = time::Instant::now();
         let mut buff = self.try_to_pin(blk)?;
         while buff.is_none() && get_waiting_time(start) < self.max_pin_wait_time_ms {
@@ -121,9 +124,9 @@ impl<'a> BufferManager<'a> {
     // buffer pool に block を割り当てを試みる
     // 割り当てられなかった場合、None を返す
     fn try_to_pin(
-        &'a self,
+        &self,
         blk: &blockid::BlockId,
-    ) -> Result<Option<Arc<Mutex<buffer::Buffer<'a>>>>, BufferManagerError> {
+    ) -> Result<Option<Arc<Mutex<buffer::Buffer>>>, BufferManagerError> {
         let maybe_buf_lock = self.find_existing_buffer(blk)?;
         let maybe_buf_lock = match maybe_buf_lock {
             Some(buf_lock) => Some(buf_lock),
@@ -161,9 +164,9 @@ impl<'a> BufferManager<'a> {
 
     // すでに buffer で保持している block の pin を要求された場合、その buffer を返す
     fn find_existing_buffer(
-        &'a self,
+        &self,
         blk: &blockid::BlockId,
-    ) -> Result<Option<Arc<Mutex<buffer::Buffer<'a>>>>, BufferManagerError> {
+    ) -> Result<Option<Arc<Mutex<buffer::Buffer>>>, BufferManagerError> {
         for buf_lock in &self.buffer_pool {
             let buf = buf_lock.lock().map_err(|_| BufferManagerError::LockError)?;
             if let Some(b) = buf.block() {
@@ -178,8 +181,8 @@ impl<'a> BufferManager<'a> {
     // buffer pool から pin されていない buffer を選択する
     // pin されていない buffer が存在しない場合は None を返す
     fn choose_unpinned_buffer(
-        &'a self,
-    ) -> Result<Option<Arc<Mutex<buffer::Buffer<'a>>>>, BufferManagerError> {
+        &self,
+    ) -> Result<Option<Arc<Mutex<buffer::Buffer>>>, BufferManagerError> {
         for buf_lock in &self.buffer_pool {
             let buf = buf_lock.lock().map_err(|_| BufferManagerError::LockError)?;
             if !buf.is_pinned() {
@@ -206,10 +209,11 @@ mod test_buffer_manager {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().to_owned();
 
-        let file_manager = file_manager::FileManager::new(&path, 400);
-        let log_manager = log_manager::LogManager::new(&file_manager, "testlog").unwrap();
+        let file_manager = Arc::new(file_manager::FileManager::new(&path, 400));
+        let log_manager =
+            Arc::new(log_manager::LogManager::new(file_manager.clone(), "testlog").unwrap());
         // max_pin_wait_time_ms を 100 に設定することで、早めにエラーを返すようにする
-        let buffer_manager = BufferManager::new(&file_manager, &log_manager, 3, Some(100));
+        let buffer_manager = BufferManager::new(file_manager, log_manager, 3, Some(100));
 
         // この 3 つの buffer は確保することができる
         let buf0 = buffer_manager.pin(&blockid::BlockId::new("testfile", 0));
@@ -240,9 +244,10 @@ mod test_buffer_manager {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().to_owned();
 
-        let file_manager = file_manager::FileManager::new(&path, 400);
-        let log_manager = log_manager::LogManager::new(&file_manager, "testlog").unwrap();
-        let buffer_manager = BufferManager::new(&file_manager, &log_manager, 3, Some(100));
+        let file_manager = Arc::new(file_manager::FileManager::new(&path, 400));
+        let log_manager =
+            Arc::new(log_manager::LogManager::new(file_manager.clone(), "testlog").unwrap());
+        let buffer_manager = BufferManager::new(file_manager, log_manager, 3, Some(100));
 
         let buf_lock = buffer_manager
             .pin(&blockid::BlockId::new("testfile", 0))
@@ -269,10 +274,11 @@ mod test_buffer_manager {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().to_owned();
 
-        let file_manager = file_manager::FileManager::new(&path, 400);
-        let log_manager = log_manager::LogManager::new(&file_manager, "testlog").unwrap();
+        let file_manager = Arc::new(file_manager::FileManager::new(&path, 400));
+        let log_manager =
+            Arc::new(log_manager::LogManager::new(file_manager.clone(), "testlog").unwrap());
         // num_buffs を 1 に設定することで、即座に buffer が追い出されるようにする
-        let buffer_manager = BufferManager::new(&file_manager, &log_manager, 1, Some(100));
+        let buffer_manager = BufferManager::new(file_manager.clone(), log_manager, 1, Some(100));
 
         let buf0 = buffer_manager
             .pin(&blockid::BlockId::new("testfile", 0))
@@ -316,9 +322,10 @@ mod test_buffer_manager {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().to_owned();
 
-        let file_manager = file_manager::FileManager::new(&path, 400);
-        let log_manager = log_manager::LogManager::new(&file_manager, "testlog").unwrap();
-        let buffer_manager = BufferManager::new(&file_manager, &log_manager, 1, Some(100));
+        let file_manager = Arc::new(file_manager::FileManager::new(&path, 400));
+        let log_manager =
+            Arc::new(log_manager::LogManager::new(file_manager.clone(), "testlog").unwrap());
+        let buffer_manager = BufferManager::new(file_manager.clone(), log_manager, 1, Some(100));
 
         let buf0 = buffer_manager
             .pin(&blockid::BlockId::new("testfile", 0))

@@ -1,6 +1,8 @@
 use crate::file::{blockid, file_manager, page};
 use crate::log::log_manager;
+
 use std::io;
+use std::sync::Arc;
 use thiserror::Error;
 
 /**
@@ -11,9 +13,9 @@ use thiserror::Error;
  * - block が変更されたかどうかの追跡 (log sequence number と transaction number を用いる)
  * - いくつのクライアントがこの buffer を pin しているかの追跡
  */
-pub struct Buffer<'a> {
-    fm: &'a file_manager::FileManager,
-    lm: &'a log_manager::LogManager<'a>,
+pub struct Buffer {
+    fm: Arc<file_manager::FileManager>,
+    lm: Arc<log_manager::LogManager>,
     contents: page::Page,
     block: Option<blockid::BlockId>, // None なら buffer は空
     pins: usize,                     // この buffer を pin してほしいといったクライアントの数
@@ -31,11 +33,8 @@ pub(crate) enum BufferError {
     FileManagerError(#[from] file_manager::FileManagerError),
 }
 
-impl<'a> Buffer<'a> {
-    pub fn new(
-        fm: &'a file_manager::FileManager,
-        lm: &'a log_manager::LogManager<'a>,
-    ) -> Buffer<'a> {
+impl Buffer {
+    pub fn new(fm: Arc<file_manager::FileManager>, lm: Arc<log_manager::LogManager>) -> Buffer {
         let block_size = fm.block_size();
         Buffer {
             fm: fm,

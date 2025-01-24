@@ -15,12 +15,12 @@ use crate::{
  * 書き込みするための lock を取得するなど、並行実行性の担保は transaction 側で行うので、ここでは考えなくて良い
  * transaction は一つの thread 内でしか動かないので、thread 間での競合は考慮しなくて良い
  */
-pub(crate) struct BufferList<'a> {
+pub(crate) struct BufferList {
     // 保持している buffer のリスト
-    buffers: HashMap<BlockId, Arc<Mutex<Buffer<'a>>>>,
+    buffers: HashMap<BlockId, Arc<Mutex<Buffer>>>,
     // pin している block のリスト
     pins: Vec<BlockId>,
-    buffer_manager: &'a BufferManager<'a>,
+    buffer_manager: Arc<BufferManager>,
 }
 
 #[derive(Error, Debug)]
@@ -33,8 +33,8 @@ pub enum BufferListError {
     InvalidStateError(String),
 }
 
-impl<'a> BufferList<'a> {
-    pub fn new(buffer_manager: &'a BufferManager<'a>) -> BufferList<'a> {
+impl BufferList {
+    pub fn new(buffer_manager: Arc<BufferManager>) -> BufferList {
         BufferList {
             buffers: HashMap::new(),
             pins: Vec::new(),
@@ -42,7 +42,7 @@ impl<'a> BufferList<'a> {
         }
     }
 
-    pub fn get_buffer(&mut self, block: &BlockId) -> Option<Arc<Mutex<Buffer<'a>>>> {
+    pub fn get_buffer(&mut self, block: &BlockId) -> Option<Arc<Mutex<Buffer>>> {
         self.buffers.get(block).cloned()
     }
 
@@ -51,7 +51,7 @@ impl<'a> BufferList<'a> {
      *
      * すでに pin されていた block であっても、再度 pin するような挙動をするので、unpin では必ず pin した回数分だけ unpin する必要がある
      */
-    pub fn pin(&mut self, block: &BlockId) -> Result<Arc<Mutex<Buffer<'a>>>, BufferManagerError> {
+    pub fn pin(&mut self, block: &BlockId) -> Result<Arc<Mutex<Buffer>>, BufferManagerError> {
         let buffer = self.buffer_manager.pin(block)?;
         self.buffers
             .entry(block.clone())
@@ -117,21 +117,26 @@ impl<'a> BufferList<'a> {
 }
 
 #[cfg(test)]
-mod test {
+mod buffer_list_test {
+    use std::path;
+
     use super::*;
     use tempfile::tempdir;
 
     use crate::file::file_manager::FileManager;
     use crate::log::log_manager::LogManager;
 
+    fn setup_buffer_list(dir_path: &path::Path) -> BufferList {
+        let file_manager = Arc::new(FileManager::new(dir_path, 400));
+        let log_manager = Arc::new(LogManager::new(file_manager.clone(), "test.log").unwrap());
+        let buffer_manager = Arc::new(BufferManager::new(file_manager, log_manager, 3, Some(10)));
+        BufferList::new(buffer_manager)
+    }
+
     #[test]
     fn test_pin_and_unpin() {
         let dir = tempdir().unwrap();
-        let file_manager = FileManager::new(dir.path(), 400);
-        let log_manager = LogManager::new(&file_manager, "test.log").unwrap();
-        let buffer_manager = BufferManager::new(&file_manager, &log_manager, 3, Some(10));
-        let mut buffer_list = BufferList::new(&buffer_manager);
-
+        let mut buffer_list = setup_buffer_list(dir.path());
         let block = BlockId::new("testfile", 0);
 
         buffer_list.pin(&block).unwrap();
@@ -146,11 +151,7 @@ mod test {
     #[test]
     fn test_unpin_all() {
         let dir = tempdir().unwrap();
-        let file_manager = FileManager::new(dir.path(), 400);
-        let log_manager = LogManager::new(&file_manager, "test.log").unwrap();
-        let buffer_manager = BufferManager::new(&file_manager, &log_manager, 3, Some(10));
-        let mut buffer_list = BufferList::new(&buffer_manager);
-
+        let mut buffer_list = setup_buffer_list(dir.path());
         let block = BlockId::new("testfile", 0);
 
         buffer_list.pin(&block).unwrap();
