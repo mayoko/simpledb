@@ -199,7 +199,6 @@ mod test_buffer_manager {
     use crate::file::page;
 
     use super::*;
-    use std::path;
     use tempfile;
 
     #[test]

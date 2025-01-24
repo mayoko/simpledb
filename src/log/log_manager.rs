@@ -6,6 +6,12 @@ use crate::log::log_iterator;
 use std::{io, sync::Mutex};
 use thiserror::Error;
 
+/**
+ * recovery や rollback を使う際に用いる、db の log record を書き込むためのクラス
+ * このクラスでは、それぞれの log は単なる byte 列として扱われる
+ *
+ * このクラスのインスタンスはプログラム中に一つだけ存在する
+ */
 pub struct LogManager<'a> {
     fm: &'a file_manager::FileManager,
     logfile: String,
@@ -54,6 +60,11 @@ impl<'a> LogManager<'a> {
         })
     }
 
+    /**
+     * byte 列としての log record を追加する。追加に成功した場合、追加された log record の log sequential number を返す
+     *
+     * この method では log record が block に書き込まれることは保証されない。書き込みまでを保証したい場合は、flush もしくは flush_all を呼ぶ必要がある
+     */
     pub fn append(&self, logrec: &[u8]) -> Result<u64, LogError> {
         // boundary 取得
         let mut boundary = {
@@ -85,12 +96,18 @@ impl<'a> LogManager<'a> {
         Ok(*latest_lsn)
     }
 
+    /**
+     * log record を最新順から読むための iterator を返す
+     */
     pub fn iterator(&self) -> Result<log_iterator::LogIterator, LogError> {
         self.flush_all()?;
         let current_block = self.current_block.lock().map_err(|_| LogError::LockError)?;
         Ok(log_iterator::LogIterator::new(self.fm, &current_block)?)
     }
 
+    /**
+     * 少なくとも lsn までの log record を block に書き込んで、永続性を保証する
+     */
     pub fn flush(&self, lsn: u64) -> Result<(), LogError> {
         let last_saved_lsn = self
             .last_saved_lsn
@@ -103,6 +120,9 @@ impl<'a> LogManager<'a> {
         Ok(())
     }
 
+    /**
+     * すべての log record を block に書き込んで、永続性を保証する
+     */
     fn flush_all(&self) -> Result<(), LogError> {
         let mut log_page = self.log_page.lock().map_err(|_| LogError::LockError)?;
         let current_block = self.current_block.lock().map_err(|_| LogError::LockError)?;
