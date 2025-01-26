@@ -88,6 +88,7 @@ impl Buffer {
     }
 
     // buffer が参照する block を変更する
+    // WAL に従って buffer が参照する block に対して行われた変更を書き込む
     pub(crate) fn assign_to_block(&mut self, block: &blockid::BlockId) -> Result<(), BufferError> {
         self.flush()?;
         self.block = Some(block.clone());

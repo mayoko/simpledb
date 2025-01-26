@@ -112,12 +112,15 @@ impl LogManager {
      * 少なくとも lsn までの log record を block に書き込んで、永続性を保証する
      */
     pub fn flush(&self, lsn: u64) -> Result<(), LogError> {
-        let last_saved_lsn = self
-            .last_saved_lsn
-            .lock()
-            .map_err(|_| LogError::LockError)?;
-        if lsn <= *last_saved_lsn {
-            return Ok(());
+        // flush_all でも last_saved_lsn が参照されるので、ここで scope を閉じて drop する必要がある
+        {
+            let last_saved_lsn = self
+                .last_saved_lsn
+                .lock()
+                .map_err(|_| LogError::LockError)?;
+            if lsn <= *last_saved_lsn {
+                return Ok(());
+            }
         }
         self.flush_all()?;
         Ok(())

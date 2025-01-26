@@ -14,6 +14,8 @@ const MAX_PIN_WAIT_TIME_MS: u64 = 10_000; // 10 seconds
  * クライアントは、pin をすることで、参照したい block を Buffer を通して操作し、操作が終わったら unpin を行って不要になったことを通知する.
  * また、flush_all を呼ぶことで、buffer pool に書き込まれた内容を block に書き込み、永続性を保証することができる.
  *
+ * buffer manager の性質により、pin されている間は、明示的に flush_all を呼ばない限り、buffer pool に書き込まれた内容は block に書き込まれない
+ *
  * プログラム全体で一つしかない想定
  */
 pub struct BufferManager {
@@ -68,7 +70,7 @@ impl BufferManager {
             .clone())
     }
 
-    // buffer pool に書き込まれた内容を block い書き込み、永続性を保証する
+    // buffer pool に書き込まれた内容を block に書き込み、永続性を保証する
     pub fn flush_all(&self) -> Result<(), BufferManagerError> {
         for buf_lock in &self.buffer_pool {
             let mut buf = buf_lock.lock().map_err(|_| BufferManagerError::LockError)?;
