@@ -24,6 +24,7 @@ impl ConcurrencyManager {
         }
     }
 
+    // 共有ロックを取得
     pub fn slock(&mut self, block: &BlockId) -> Result<(), LockTableError> {
         match self.locks.get(&block) {
             Some(_) => Ok(()),
@@ -36,6 +37,7 @@ impl ConcurrencyManager {
         }
     }
 
+    // 排他的ロックを取得
     pub fn xlock(&mut self, block: &BlockId) -> Result<(), LockTableError> {
         let entry = self.locks.entry(block.clone());
         match entry {
@@ -44,8 +46,7 @@ impl ConcurrencyManager {
                 match value {
                     LockType::Shared => {
                         // すでに shared lock が取られていたら exclusive lock に変更
-                        self.lock_table.unlock(&block)?;
-                        self.lock_table.xlock(&block)?;
+                        self.lock_table.promote_to_xlock(&block)?;
                         *value = LockType::Exclusive;
                         Ok(())
                     }
@@ -63,6 +64,7 @@ impl ConcurrencyManager {
         }
     }
 
+    // 取得していたすべての lock を解放
     pub fn release(&mut self) -> Result<(), LockTableError> {
         for block in self.locks.keys() {
             self.lock_table.unlock(block)?;

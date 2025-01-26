@@ -91,7 +91,9 @@ impl LockTable {
     }
 
     /**
-     * 占有ロックを取得する
+     * 何も lock を持っていない状態から、占有ロックを取得する
+     *
+     * Note: 共有ロックを持っている場合は promote_to_xlock を使う。すでに slock を持っている状態でこのメソッドを呼び出すと deadlock する
      */
     pub fn xlock(&self, blk: &BlockId) -> Result<(), LockTableError> {
         let start = time::Instant::now();
@@ -125,7 +127,60 @@ impl LockTable {
             }
         }
         Err(LockTableError::TimeoutError(
-            "failed to acquire shared lock within the time limit".into(),
+            "failed to acquire exclusive lock within the time limit".into(),
+        ))
+    }
+
+    /**
+     * slock を持っていた状態から、xlock を取得する
+     *
+     * Warning: このメソッドでは、呼び出し元が本当に slock を持っていたのかについては確認していない。正しい状態で呼び出さないと lock の状態が破綻する
+     */
+    pub fn promote_to_xlock(&self, blk: &BlockId) -> Result<(), LockTableError> {
+        let start = time::Instant::now();
+        // timelimit まで lock 取得を試みる
+        while get_waiting_time(start) < self.max_waiting_time_ms {
+            let lock_entry = self.locks.entry(blk.clone());
+            match lock_entry {
+            dashmap::mapref::entry::Entry::Occupied(lock_entry) => {
+                let mut lock = lock_entry.get().lock().map_err(|_| {
+                    LockTableError::LockError(format!(
+                        "failed to acquire the lock value for blk {:?}",
+                        blk.clone()
+                    ))
+                })?;
+                match *lock {
+                    Lock::Shared(1) => {
+                        *lock = Lock::Exclusive;
+                        return Ok(());
+                    }
+                    Lock::Shared(_) | Lock::Exclusive => {
+                        // 他のスレッドが排他ロックを取得している場合は待つ
+                        let queue = self.get_or_create_queue(blk);
+                        let mut queue = queue.lock().map_err(|_| {
+                            LockTableError::LockError(
+                                "failed to acquire the lock of waiting queue list".into(),
+                            )
+                        })?;
+                        queue.push_back(thread::current());
+
+                        // 他の thread が lock に触れるよう、dashmap の参照を解放 (これをやらないと unlock する側が値を読めない)
+                        drop(queue);
+                        drop(lock);
+
+                        // unpark が先に呼び出されても、仕様的に race condition は発生しないらしい
+                        park_timeout(time::Duration::from_millis(self.max_waiting_time_ms));
+                    }
+                }
+            }
+            dashmap::mapref::entry::Entry::Vacant(_) => return Err(LockTableError::GeneralError(
+                "promote_to_xlock method must be called after the specified block is shared locked"
+                    .into(),
+            )),
+        }
+        }
+        Err(LockTableError::TimeoutError(
+            "failed to acquire exclusive lock within the time limit".into(),
         ))
     }
 
@@ -253,6 +308,18 @@ mod lock_table_test {
         // unlock すると、次の xlock が成功する
         lock_table.unlock(&blk0).unwrap();
         lock_table.xlock(&blk0).unwrap();
+    }
+
+    #[test]
+    fn test_promote_to_xlock() {
+        let lock_table = Arc::new(LockTable::new(Some(10)));
+        let blk = Arc::new(BlockId::new("test", 0));
+
+        lock_table.slock(&blk).unwrap();
+        // 普通に xlock しようとすると失敗する
+        assert!(lock_table.xlock(&blk).is_err());
+        // slock から xlock に昇格することはできる
+        assert!(lock_table.promote_to_xlock(&blk).is_ok());
     }
 
     #[test]
