@@ -1,1 +1,1 @@
-pub const INTEGER_BYTE_LEN: usize = 4;
+pub const INTEGER_BYTE_LEN: usize = std::mem::size_of::<i32>();

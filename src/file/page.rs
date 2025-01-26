@@ -49,9 +49,9 @@ impl Page {
     }
 
     pub fn max_length(strlen: usize) -> usize {
-        // utf-8 での最大長は 6 byte なはず...
-        // https://stackoverflow.com/questions/9533258/what-is-the-maximum-number-of-bytes-for-a-utf-8-encoded-character
-        return 4 + (strlen * 6);
+        // utf-8 での最大長は 4 byte なはず...
+        // https://ja.wikipedia.org/wiki/UTF-8?utm_source=chatgpt.com
+        return 4 + (strlen * 4);
     }
 
     pub(crate) fn contents_mut(&mut self) -> &mut Vec<u8> {
