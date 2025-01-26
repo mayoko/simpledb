@@ -1,4 +1,4 @@
-use super::interface::LogOp;
+use super::log_record::LogOp;
 use crate::constants::INTEGER_BYTE_LEN;
 use crate::file::page::Page;
 use crate::log::log_manager::{LogError, LogManager};

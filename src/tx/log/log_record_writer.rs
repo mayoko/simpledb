@@ -1,7 +1,7 @@
-use super::log_record::commit_record::CommitRecord;
-use super::log_record::rollback_record::RollbackRecord;
-use super::log_record::{
-    check_point_record::CheckPointRecord, interface::LogRecordError, set_int_record::SetIntRecord,
+use super::record::commit_record::CommitRecord;
+use super::record::rollback_record::RollbackRecord;
+use super::record::{
+    check_point_record::CheckPointRecord, log_record::LogRecordError, set_int_record::SetIntRecord,
     set_string_record::SetStringRecord, start_record::StartRecord,
 };
 use crate::buffer::buffer;

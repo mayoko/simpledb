@@ -1,4 +1,4 @@
-use super::interface::LogOp;
+use super::log_record::LogOp;
 use crate::constants::INTEGER_BYTE_LEN;
 use crate::file::page::Page;
 use crate::log::log_manager::{LogError, LogManager};
@@ -29,7 +29,7 @@ mod check_point_record_test {
     use crate::file::file_manager::FileManager;
     use crate::file::page::Page;
     use crate::log::log_manager::LogManager;
-    use crate::tx::recovery::log_record::interface::LogOp;
+    use crate::tx::log::record::log_record::LogOp;
 
     use std::sync::Arc;
     use tempfile::tempdir;

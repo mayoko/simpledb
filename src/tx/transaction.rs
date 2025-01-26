@@ -5,14 +5,14 @@ use thiserror::Error;
 
 use super::buffer_list::{self, BufferList, BufferListError};
 use super::concurrency::lock_table::{LockTable, LockTableError};
-use super::recovery::log_record::interface::{LogRecord, LogRecordError, LogReplayError};
-use super::recovery::log_record_iterator::{LogRecordIterator, LogRecordReverseIterator};
+use super::log::log_record_iterator::{LogRecordIterator, LogRecordReverseIterator};
+use super::log::record::log_record::{LogRecord, LogRecordError, LogReplayError};
 use crate::buffer::buffer_manager::{BufferManager, BufferManagerError};
 use crate::file::file_manager::FileManagerError;
 use crate::file::{blockid::BlockId, file_manager::FileManager};
 use crate::log::log_manager::{LogError, LogManager};
 use crate::tx::concurrency::concurrency_manager::ConcurrencyManager;
-use crate::tx::recovery::log_record_writer::LogRecordWriter;
+use crate::tx::log::log_record_writer::LogRecordWriter;
 
 /**
  * db を操作するひとまとまりの処理単位である transaction を表すクラス

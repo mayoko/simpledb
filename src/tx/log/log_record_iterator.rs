@@ -1,4 +1,4 @@
-use super::log_record::interface::LogRecord;
+use super::record::log_record::LogRecord;
 use crate::file::file_manager::FileManagerError;
 use crate::log::log_iterator::{LogIterator, LogReverseIterator};
 use crate::log::log_manager::{self, LogError};

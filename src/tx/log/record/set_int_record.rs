@@ -1,6 +1,6 @@
 use std::string::FromUtf8Error;
 
-use super::interface::{LogOp, LogReplayError};
+use super::log_record::{LogOp, LogReplayError};
 use crate::constants::INTEGER_BYTE_LEN;
 use crate::file::{blockid, page};
 use crate::log::log_manager;

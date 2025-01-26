@@ -114,7 +114,7 @@ mod log_record_test {
     use crate::file::blockid::BlockId;
     use crate::file::file_manager::FileManager;
     use crate::log::log_manager::LogManager;
-    use crate::tx::recovery::log_record::check_point_record::CheckPointRecord;
+    use crate::tx::log::record::check_point_record::CheckPointRecord;
 
     use std::sync::Arc;
     use tempfile::tempdir;
