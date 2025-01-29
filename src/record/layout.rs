@@ -6,9 +6,15 @@ use crate::{constants::INTEGER_BYTE_LEN, file::page::Page};
 
 use super::schema::{FieldInfo, Schema};
 
+/**
+ * table のレコードがどのように保存されているのかを示す構造体
+ */
+#[derive(Clone)]
 pub struct Layout {
     schema: Schema,
+    // 各 field が record 開始位置からどれだけ離れた位置からデータを保存し始めているかを示す
     offsets: HashMap<String, usize>,
+    // 1 つの record が何バイトで保存されているかを示す
     slot_size: usize,
 }
 

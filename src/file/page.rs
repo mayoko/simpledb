@@ -1,3 +1,5 @@
+use crate::constants::INTEGER_BYTE_LEN;
+
 pub struct Page {
     bb: Vec<u8>,
 }
@@ -14,19 +16,19 @@ impl Page {
     }
 
     pub fn get_int(&self, offset: usize) -> i32 {
-        let mut bytes = [0u8; 4];
-        bytes.copy_from_slice(&self.bb[offset..offset + 4]);
+        let mut bytes = [0u8; INTEGER_BYTE_LEN];
+        bytes.copy_from_slice(&self.bb[offset..offset + INTEGER_BYTE_LEN]);
         i32::from_be_bytes(bytes)
     }
 
     pub fn set_int(&mut self, offset: usize, n: i32) {
         let bytes = n.to_be_bytes();
-        self.bb[offset..offset + 4].copy_from_slice(&bytes);
+        self.bb[offset..offset + INTEGER_BYTE_LEN].copy_from_slice(&bytes);
     }
 
     pub fn get_bytes(&self, offset: usize) -> Vec<u8> {
         let length = self.get_int(offset) as usize;
-        let pos = offset + 4;
+        let pos = offset + INTEGER_BYTE_LEN;
         let mut bytes = vec![0u8; length];
         bytes.copy_from_slice(&self.bb[pos..pos + length]);
         return bytes;
@@ -34,7 +36,7 @@ impl Page {
 
     pub fn set_bytes(&mut self, offset: usize, b: &[u8]) {
         self.set_int(offset, b.len() as i32);
-        let pos = offset + 4;
+        let pos = offset + INTEGER_BYTE_LEN;
         self.bb[pos..pos + b.len()].copy_from_slice(&b);
     }
 
@@ -51,7 +53,7 @@ impl Page {
     pub fn max_length(strlen: usize) -> usize {
         // utf-8 での最大長は 4 byte なはず...
         // https://ja.wikipedia.org/wiki/UTF-8?utm_source=chatgpt.com
-        return 4 + (strlen * 4);
+        return INTEGER_BYTE_LEN + (strlen * 4);
     }
 
     pub(crate) fn contents_mut(&mut self) -> &mut Vec<u8> {

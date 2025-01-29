@@ -2,6 +2,9 @@ use std::collections::HashMap;
 
 use thiserror::Error;
 
+/**
+ * table のそれぞれの record いどのようなデータ型を持っているかを示す構造体
+ */
 #[derive(Clone)]
 pub struct Schema {
     fields: Vec<String>,
