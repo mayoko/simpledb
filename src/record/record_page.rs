@@ -7,14 +7,16 @@ use thiserror::Error;
 
 use super::layout::Layout;
 
+use std::{cell::RefCell, rc::Rc};
+
 /**
  * ある block の中で、layout に従った record を取得・操作するための構造体
  *
  * フィールドの長さは固定長で、Unspanned (page をまたいで record を保存することがない) と仮定している
  */
-pub struct RecordPage<'a> {
+pub struct RecordPage {
     // record を取得する主体となっている transaction
-    tx: &'a mut Transaction,
+    tx: Rc<RefCell<Transaction>>,
     // 参照している block
     block: BlockId,
     layout: Layout,
@@ -40,44 +42,52 @@ pub(crate) enum RecordPageError {
     TransactionSetError(#[from] TransactionSetError),
 }
 
-impl<'a> RecordPage<'a> {
-    pub fn new(tx: &'a mut Transaction, block: &BlockId, layout: &Layout) -> Self {
-        RecordPage {
-            tx: tx,
+impl Drop for RecordPage {
+    fn drop(&mut self) {
+        // new で pin した block を unpin する
+        self.tx.borrow_mut().unpin(&self.block).unwrap();
+    }
+}
+
+impl RecordPage {
+    pub fn new(tx: Rc<RefCell<Transaction>>, block: &BlockId, layout: &Layout) -> Self {
+        let record_page = RecordPage {
+            tx,
             block: block.clone(),
             layout: layout.clone(),
-        }
+        };
+        record_page.tx.borrow_mut().pin(&block).unwrap();
+        record_page
     }
 
-    pub fn get_int(&mut self, slot: usize, field_name: &str) -> Result<i32, RecordPageError> {
+    pub fn get_int(&self, slot: usize, field_name: &str) -> Result<i32, RecordPageError> {
         let offset = self.offset(slot, field_name)?;
-        Ok(self.tx.get_int(&self.block, offset)?)
+        Ok(self.tx.borrow_mut().get_int(&self.block, offset)?)
     }
 
-    pub fn get_string(&mut self, slot: usize, field_name: &str) -> Result<String, RecordPageError> {
+    pub fn get_string(&self, slot: usize, field_name: &str) -> Result<String, RecordPageError> {
         let offset = self.offset(slot, field_name)?;
-        Ok(self.tx.get_string(&self.block, offset)?)
+        Ok(self.tx.borrow_mut().get_string(&self.block, offset)?)
     }
 
-    pub fn set_int(
-        &mut self,
-        slot: usize,
-        field_name: &str,
-        val: i32,
-    ) -> Result<(), RecordPageError> {
+    pub fn set_int(&self, slot: usize, field_name: &str, val: i32) -> Result<(), RecordPageError> {
         let offset = self.offset(slot, field_name)?;
-        self.tx.set_int(&self.block, offset, val, true)?;
+        self.tx
+            .borrow_mut()
+            .set_int(&self.block, offset, val, true)?;
         Ok(())
     }
 
     pub fn set_string(
-        &mut self,
+        &self,
         slot: usize,
         field_name: &str,
         val: &str,
     ) -> Result<(), RecordPageError> {
         let offset = self.offset(slot, field_name)?;
-        self.tx.set_string(&self.block, offset, val, true)?;
+        self.tx
+            .borrow_mut()
+            .set_string(&self.block, offset, val, true)?;
         Ok(())
     }
 
@@ -87,10 +97,10 @@ impl<'a> RecordPage<'a> {
     }
 
     // block の状態を初期化する。ここで施した変更は log には保存しない
-    pub fn format(&mut self) -> Result<(), RecordPageError> {
+    pub fn format(&self) -> Result<(), RecordPageError> {
         let mut slot = 0;
         while self.is_valid_slot(slot) {
-            self.tx.set_int(
+            self.tx.borrow_mut().set_int(
                 &self.block,
                 self.root_offset(slot),
                 RecordPageFlag::Empty as i32,
@@ -101,10 +111,10 @@ impl<'a> RecordPage<'a> {
                 let offset = self.offset(slot, &field)?;
                 match schema.info(&field) {
                     Some(crate::record::schema::FieldInfo::Integer) => {
-                        self.tx.set_int(&self.block, offset, 0, false)?;
+                        self.tx.borrow_mut().set_int(&self.block, offset, 0, false)?;
                     }
                     Some(crate::record::schema::FieldInfo::String(_)) => {
-                        self.tx.set_string(&self.block, offset, "", false)?;
+                        self.tx.borrow_mut().set_string(&self.block, offset, "", false)?;
                     }
                     None => return Err(RecordPageError::InvalidCallError(
                         "field not found. It might be because the layout configuration was not correct."
@@ -137,6 +147,10 @@ impl<'a> RecordPage<'a> {
         }
     }
 
+    pub fn block(&self) -> &BlockId {
+        &self.block
+    }
+
     fn search_after(
         &mut self,
         slot: Option<usize>,
@@ -147,7 +161,10 @@ impl<'a> RecordPage<'a> {
             None => 0,
         };
         while self.is_valid_slot(next_slot) {
-            let flag = self.tx.get_int(&self.block, self.root_offset(next_slot))?;
+            let flag = self
+                .tx
+                .borrow_mut()
+                .get_int(&self.block, self.root_offset(next_slot))?;
             let flag = RecordPageFlag::from_i32(flag).ok_or(RecordPageError::InternalError(
                 format!("invalid flag found. slot: {}, flag: {}", next_slot, flag),
             ))?;
@@ -161,7 +178,9 @@ impl<'a> RecordPage<'a> {
 
     fn set_flag(&mut self, slot: usize, flag: RecordPageFlag) -> Result<(), RecordPageError> {
         let offset = slot * self.layout.slot_size();
-        self.tx.set_int(&self.block, offset, flag as i32, true)?;
+        self.tx
+            .borrow_mut()
+            .set_int(&self.block, offset, flag as i32, true)?;
         Ok(())
     }
 
@@ -180,7 +199,7 @@ impl<'a> RecordPage<'a> {
     }
 
     fn is_valid_slot(&self, slot: usize) -> bool {
-        let block_size = self.tx.block_size();
+        let block_size = self.tx.borrow_mut().block_size();
         return self.root_offset(slot + 1) < block_size;
     }
 }
@@ -208,6 +227,8 @@ mod record_page_test {
         record::schema::{FieldInfo, Schema},
     };
 
+    use std::cell::RefCell;
+    use std::rc::Rc;
     use std::sync::Arc;
 
     use tempfile::{tempdir, TempDir};
@@ -240,50 +261,52 @@ mod record_page_test {
         let dir = tempdir().unwrap();
         let factory = setup_factory(&dir);
 
-        let mut tx = factory.create().unwrap();
+        let tx = Rc::new(RefCell::new(factory.create().unwrap()));
         let block = BlockId::new("testfile", 0);
-        tx.pin(&block).unwrap();
 
-        let layout = setup_layout();
-        let mut record_page = RecordPage::new(&mut tx, &block, &layout);
+        {
+            let layout = setup_layout();
+            let mut record_page = RecordPage::new(tx.clone(), &block, &layout);
 
-        // format する
-        assert!(record_page.format().is_ok());
+            // format する
+            assert!(record_page.format().is_ok());
 
-        // insert していく
-        let mut slot = record_page.insert_after(None).unwrap();
-        while let Some(s) = slot {
-            assert!(record_page.set_int(s, "A", s as i32).is_ok());
-            assert!(record_page.set_string(s, "B", &format!("rec{}", s)).is_ok());
-            slot = record_page.insert_after(slot).unwrap();
-        }
-        // record を順に読んでいき、10 以下の値を取る record は削除する。ついでに、insert した reocord の数を数えておく
-        let mut count = 0;
-        let mut slot = record_page.next_after(None).unwrap();
-        while let Some(s) = slot {
-            count += 1;
-            let a = record_page.get_int(s, "A").unwrap();
-            let b = record_page.get_string(s, "B").unwrap();
-            if a <= 10 {
-                assert!(record_page.delete(s).is_ok());
-            } else {
-                assert_eq!(a, s as i32);
-                assert_eq!(b, format!("rec{}", s));
+            // insert していく
+            let mut slot = record_page.insert_after(None).unwrap();
+            while let Some(s) = slot {
+                assert!(record_page.set_int(s, "A", s as i32).is_ok());
+                assert!(record_page.set_string(s, "B", &format!("rec{}", s)).is_ok());
+                slot = record_page.insert_after(slot).unwrap();
             }
-            slot = record_page.next_after(slot).unwrap();
+            // record を順に読んでいき、10 以下の値を取る record は削除する。ついでに、insert した reocord の数を数えておく
+            let mut count = 0;
+            let mut slot = record_page.next_after(None).unwrap();
+            while let Some(s) = slot {
+                count += 1;
+                let a = record_page.get_int(s, "A").unwrap();
+                let b = record_page.get_string(s, "B").unwrap();
+                if a <= 10 {
+                    assert!(record_page.delete(s).is_ok());
+                } else {
+                    assert_eq!(a, s as i32);
+                    assert_eq!(b, format!("rec{}", s));
+                }
+                slot = record_page.next_after(slot).unwrap();
+            }
+            // slot size = 48 (= 4 (flag) + 4 (integer) + (4 + 4 * 9) (string)) なので、block_size = 800 のもとでは 800/48 = 16 までしか record を保存しない
+            assert_eq!(count, 16);
+            let mut slot = record_page.next_after(None).unwrap();
+            let mut count = 0;
+            while let Some(_) = slot {
+                count += 1;
+                slot = record_page.next_after(slot).unwrap();
+            }
+            // 11 ~ 15 の 5 つ
+            assert_eq!(count, 5);
         }
-        // slot size = 48 (= 4 (flag) + 4 (integer) + (4 + 4 * 9) (string)) なので、block_size = 800 のもとでは 800/48 = 16 までしか record を保存しない
-        assert_eq!(count, 16);
-        let mut slot = record_page.next_after(None).unwrap();
-        let mut count = 0;
-        while let Some(_) = slot {
-            count += 1;
-            slot = record_page.next_after(slot).unwrap();
-        }
-        // 11 ~ 15 の 5 つ
-        assert_eq!(count, 5);
 
-        tx.unpin(&block).unwrap();
-        tx.commit().unwrap();
+        // drop で unpin されているので、再び unpin しようとすると error になる
+        assert!(tx.borrow_mut().unpin(&block).is_err());
+        tx.borrow_mut().commit().unwrap();
     }
 }

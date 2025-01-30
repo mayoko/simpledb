@@ -49,7 +49,7 @@ impl BufferList {
     /**
      * 指定された block を pin する
      *
-     * すでに pin されていた block であっても、再度 pin するような挙動をするので、unpin では必ず pin した回数分だけ unpin する必要がある
+     * Note: すでに pin されていた block であっても、再度 pin するような挙動をするので、unpin では必ず pin した回数分だけ unpin する必要がある
      */
     pub fn pin(&mut self, block: &BlockId) -> Result<Arc<Mutex<Buffer>>, BufferManagerError> {
         let buffer = self.buffer_manager.pin(block)?;

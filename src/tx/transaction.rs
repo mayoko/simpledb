@@ -163,6 +163,7 @@ impl Transaction {
     // Note: pin することと lock を取ることは独立に行えるので、lock を取っている状態であっても pin を解除することができる
     //       unpin して内容が flush されたとしても、lock を取り続けていれば uncommitted read は起きないし、
     //       flush された内容が log に書き出されても commit log が入っていない限りは recovery で元に戻される
+    // Note: pin を呼び出した回数分だけ unpin する必要がある
     pub fn unpin(&mut self, block: &BlockId) -> Result<(), BufferListError> {
         self.buffer_list.unpin(block)?;
         Ok(())
