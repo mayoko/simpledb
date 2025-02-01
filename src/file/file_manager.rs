@@ -75,7 +75,7 @@ impl FileManager {
         match file {
             Some(file) => {
                 file.seek(io::SeekFrom::Start(blk.number() as u64 * blocksize as u64))?;
-                file.read(p.contents_mut())?;
+                file.read_exact(p.contents_mut())?;
                 Ok(())
             }
             None => Err(file_not_found_error()),
@@ -97,7 +97,7 @@ impl FileManager {
                 file.seek(std::io::SeekFrom::Start(
                     blk.number() as u64 * blocksize as u64,
                 ))?;
-                file.write(p.contents())?;
+                file.write_all(p.contents())?;
                 Ok(())
             }
             None => Err(file_not_found_error()),
@@ -122,7 +122,7 @@ impl FileManager {
                 file.seek(std::io::SeekFrom::Start((blknum * blocksize) as u64))?;
 
                 let bytes = vec![0u8; blocksize];
-                file.write(&bytes)?;
+                file.write_all(&bytes)?;
 
                 Ok(block)
             }
@@ -188,13 +188,13 @@ mod test_file_manager {
         let path = dir.path().to_owned();
 
         let file_manager = FileManager::new(&path, 400);
-        assert_eq!(file_manager.is_new(), false);
+        assert!(!file_manager.is_new());
 
         // これでフォルダが削除される
         drop(dir);
 
         let file_manager = FileManager::new(&path, 400);
-        assert_eq!(file_manager.is_new(), true);
+        assert!(file_manager.is_new());
     }
 
     #[test]
@@ -214,7 +214,7 @@ mod test_file_manager {
         let mut page = Page::new_from_size(400);
 
         page.set_int(0, 123);
-        file_manager.write(&block, &mut page).unwrap();
+        file_manager.write(&block, &page).unwrap();
 
         let mut read_page = Page::new_from_size(400);
         file_manager.read(&block, &mut read_page).unwrap();
