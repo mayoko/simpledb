@@ -35,16 +35,18 @@ pub struct TableScan {
 #[derive(Error, Debug)]
 pub(crate) enum TableScanError {
     #[error("invalid call error: {0}")]
-    InvalidCallError(String),
+    InvalidCall(String),
     #[error("buffer list error: {0}")]
-    BufferListError(#[from] BufferListError),
+    BufferList(#[from] BufferListError),
     #[error("transaction size error: {0}")]
-    TransactionSizeError(#[from] TransactionSizeError),
+    TransactionSize(#[from] TransactionSizeError),
     #[error("record page error: {0}")]
-    RecordPageError(#[from] RecordPageError),
+    RecordPage(#[from] RecordPageError),
 }
 
 impl TableScan {
+    // table scan を作成する
+    // table が存在しない場合は新しく作成される
     pub fn new(
         tx: Rc<RefCell<Transaction>>,
         tblname: &str,
@@ -53,19 +55,19 @@ impl TableScan {
         let filename = format!("{}.tbl", tblname);
         let record_page = if tx.borrow_mut().size(&filename)? == 0 {
             let block = tx.borrow_mut().append(&filename)?;
-            let record_page = RecordPage::new(tx.clone(), &block, &layout);
+            let record_page = RecordPage::new(tx.clone(), &block, layout);
             record_page.format()?;
             record_page
         } else {
             let block = BlockId::new(&filename, 0);
-            let record_page = RecordPage::new(tx.clone(), &block, &layout);
+            let record_page = RecordPage::new(tx.clone(), &block, layout);
             record_page
         };
         Ok(TableScan {
             tx: tx.clone(),
             layout: layout.clone(),
             record_page,
-            filename: filename,
+            filename,
             current_slot: None,
         })
     }
@@ -88,9 +90,7 @@ impl TableScan {
     // 今いる slot に対して、指定した field の値を取得する
     pub fn get_val(&self, field_name: &str) -> Result<Constant, TableScanError> {
         match self.layout.schema().info(field_name) {
-            None => Err(TableScanError::InvalidCallError(
-                "field not found".to_string(),
-            )),
+            None => Err(TableScanError::InvalidCall("field not found".to_string())),
             Some(FieldInfo::Integer) => {
                 let val = self
                     .record_page
@@ -106,16 +106,32 @@ impl TableScan {
         }
     }
 
+    pub fn get_int(&self, field_name: &str) -> Result<i32, TableScanError> {
+        match self.get_val(field_name)? {
+            Constant::Int(val) => Ok(val),
+            _ => Err(TableScanError::InvalidCall(
+                "field type mismatch".to_string(),
+            )),
+        }
+    }
+
+    pub fn get_string(&self, field_name: &str) -> Result<String, TableScanError> {
+        match self.get_val(field_name)? {
+            Constant::String(val) => Ok(val),
+            _ => Err(TableScanError::InvalidCall(
+                "field type mismatch".to_string(),
+            )),
+        }
+    }
+
     pub fn set_val(&self, field_name: &str, val: &Constant) -> Result<(), TableScanError> {
         match self.layout.schema().info(field_name) {
-            None => Err(TableScanError::InvalidCallError(
-                "field not found".to_string(),
-            )),
+            None => Err(TableScanError::InvalidCall("field not found".to_string())),
             Some(FieldInfo::Integer) => {
                 let val = match val {
                     Constant::Int(val) => *val,
                     _ => {
-                        return Err(TableScanError::InvalidCallError(
+                        return Err(TableScanError::InvalidCall(
                             "field type mismatch".to_string(),
                         ))
                     }
@@ -128,7 +144,7 @@ impl TableScan {
                 let val = match val {
                     Constant::String(val) => val,
                     _ => {
-                        return Err(TableScanError::InvalidCallError(
+                        return Err(TableScanError::InvalidCall(
                             "field type mismatch".to_string(),
                         ))
                     }
@@ -138,6 +154,14 @@ impl TableScan {
                 Ok(())
             }
         }
+    }
+
+    pub fn set_int(&self, field_name: &str, val: i32) -> Result<(), TableScanError> {
+        self.set_val(field_name, &Constant::Int(val))
+    }
+
+    pub fn set_string(&self, field_name: &str, val: &str) -> Result<(), TableScanError> {
+        self.set_val(field_name, &Constant::String(val.to_string()))
     }
 
     // 新しい record を挿入するために、現在の slot 位置から移動を行う
@@ -206,7 +230,6 @@ impl TableScan {
 
 #[cfg(test)]
 mod table_scan_test {
-    use crate::file::blockid::BlockId;
     use crate::file::file_manager::FileManager;
     use crate::log::log_manager::LogManager;
     use crate::query::constant::Constant;

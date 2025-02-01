@@ -5,7 +5,7 @@ use thiserror::Error;
 /**
  * table のそれぞれの record いどのようなデータ型を持っているかを示す構造体
  */
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Schema {
     fields: Vec<String>,
     info: HashMap<String, FieldInfo>,
@@ -70,6 +70,40 @@ impl Schema {
 pub enum FieldInfo {
     Integer,
     String(usize),
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub enum FieldType {
+    Integer = 0,
+    String = 1,
+}
+
+#[derive(Error, Debug)]
+pub(crate) enum FieldTypeError {
+    #[error("invalid call error: {0}")]
+    InvalidCall(String),
+}
+
+impl FieldInfo {
+    pub fn get_type(&self) -> FieldType {
+        match self {
+            FieldInfo::Integer => FieldType::Integer,
+            FieldInfo::String(_) => FieldType::String,
+        }
+    }
+}
+
+impl FieldType {
+    pub fn from_i32(value: i32) -> Result<FieldType, FieldTypeError> {
+        match value {
+            0 => Ok(FieldType::Integer),
+            1 => Ok(FieldType::String),
+            _ => Err(FieldTypeError::InvalidCall(format!(
+                "invalid value: {}",
+                value
+            ))),
+        }
+    }
 }
 
 #[cfg(test)]

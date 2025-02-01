@@ -9,7 +9,7 @@ use super::schema::{FieldInfo, Schema};
 /**
  * table のレコードがどのように保存されているのかを示す構造体
  */
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Layout {
     schema: Schema,
     // 各 field が record 開始位置からどれだけ離れた位置からデータを保存し始めているかを示す
@@ -41,8 +41,8 @@ impl Layout {
             }
         }
         Ok(Layout {
-            schema: schema,
-            offsets: offsets,
+            schema,
+            offsets,
             slot_size: pos,
         })
     }
@@ -53,9 +53,9 @@ impl Layout {
         slot_size: usize,
     ) -> Layout {
         Layout {
-            schema: schema,
-            offsets: offsets,
-            slot_size: slot_size,
+            schema,
+            offsets,
+            slot_size,
         }
     }
 
