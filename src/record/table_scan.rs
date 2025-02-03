@@ -60,8 +60,8 @@ impl TableScan {
             record_page
         } else {
             let block = BlockId::new(&filename, 0);
-            let record_page = RecordPage::new(tx.clone(), &block, layout);
-            record_page
+
+            RecordPage::new(tx.clone(), &block, layout)
         };
         Ok(TableScan {
             tx: tx.clone(),
@@ -89,18 +89,22 @@ impl TableScan {
 
     // 今いる slot に対して、指定した field の値を取得する
     pub fn get_val(&self, field_name: &str) -> Result<Constant, TableScanError> {
+        let slot = match self.current_slot {
+            None => {
+                return Err(TableScanError::InvalidCall(
+                    "no record is specified. you need to call before_first (and optionally move_next) first".to_string(),
+                ))
+            }
+            Some(slot) => slot,
+        };
         match self.layout.schema().info(field_name) {
             None => Err(TableScanError::InvalidCall("field not found".to_string())),
             Some(FieldInfo::Integer) => {
-                let val = self
-                    .record_page
-                    .get_int(self.current_slot.unwrap(), field_name)?;
+                let val = self.record_page.get_int(slot, field_name)?;
                 Ok(Constant::Int(val))
             }
             Some(FieldInfo::String(_)) => {
-                let val = self
-                    .record_page
-                    .get_string(self.current_slot.unwrap(), field_name)?;
+                let val = self.record_page.get_string(slot, field_name)?;
                 Ok(Constant::String(val))
             }
         }
@@ -125,6 +129,15 @@ impl TableScan {
     }
 
     pub fn set_val(&self, field_name: &str, val: &Constant) -> Result<(), TableScanError> {
+        let slot = match self.current_slot {
+            None => {
+                return Err(TableScanError::InvalidCall(
+                    "no record is specified. you need to call before_first/insert first"
+                        .to_string(),
+                ))
+            }
+            Some(slot) => slot,
+        };
         match self.layout.schema().info(field_name) {
             None => Err(TableScanError::InvalidCall("field not found".to_string())),
             Some(FieldInfo::Integer) => {
@@ -136,8 +149,7 @@ impl TableScan {
                         ))
                     }
                 };
-                self.record_page
-                    .set_int(self.current_slot.unwrap(), field_name, val)?;
+                self.record_page.set_int(slot, field_name, val)?;
                 Ok(())
             }
             Some(FieldInfo::String(_)) => {
@@ -149,8 +161,7 @@ impl TableScan {
                         ))
                     }
                 };
-                self.record_page
-                    .set_string(self.current_slot.unwrap(), field_name, val)?;
+                self.record_page.set_string(slot, field_name, val)?;
                 Ok(())
             }
         }
@@ -182,8 +193,15 @@ impl TableScan {
 
     // 現在 cursor が指している record を削除する
     pub fn delete(&mut self) -> Result<(), TableScanError> {
-        self.record_page.delete(self.current_slot.unwrap())?;
-        Ok(())
+        match self.current_slot {
+            None => Err(TableScanError::InvalidCall(
+                "no record is specified. you need to call before_first (and optionally move_next) first".to_string(),
+            )),
+            Some(slot) => {
+                self.record_page.delete(slot)?;
+                Ok(())
+            }
+        }
     }
 
     pub fn move_to_rid(&mut self, rid: &Rid) -> Result<(), TableScanError> {

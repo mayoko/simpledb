@@ -6,6 +6,7 @@ use crate::{
 use thiserror::Error;
 
 use super::layout::Layout;
+use super::schema::FieldInfo;
 
 use std::{cell::RefCell, rc::Rc};
 
@@ -33,13 +34,13 @@ pub enum RecordPageFlag {
 #[derive(Error, Debug)]
 pub(crate) enum RecordPageError {
     #[error("invalid call error: {0}")]
-    InvalidCallError(String),
+    InvalidCall(String),
     #[error("internal error: {0}")]
-    InternalError(String),
+    Internal(String),
     #[error("transaction get error: {0}")]
-    TransactionGetError(#[from] TransactionGetError),
+    TransactionGet(#[from] TransactionGetError),
     #[error("transaction set error: {0}")]
-    TransactionSetError(#[from] TransactionSetError),
+    TransactionSet(#[from] TransactionSetError),
 }
 
 impl Drop for RecordPage {
@@ -56,7 +57,7 @@ impl RecordPage {
             block: block.clone(),
             layout: layout.clone(),
         };
-        record_page.tx.borrow_mut().pin(&block).unwrap();
+        record_page.tx.borrow_mut().pin(block).unwrap();
         record_page
     }
 
@@ -78,12 +79,29 @@ impl RecordPage {
         Ok(())
     }
 
+    // string の長さが schema で設定された長さを超えていないかチェックしてから set する
     pub fn set_string(
         &self,
         slot: usize,
         field_name: &str,
         val: &str,
     ) -> Result<(), RecordPageError> {
+        // string の長さが schema で設定された長さを超えていないかチェック
+        match self.layout.schema().info(field_name) {
+            Some(FieldInfo::String(len)) => {
+                if val.chars().count() > len {
+                    return Err(RecordPageError::InvalidCall(format!(
+                        "string is too long. field: {}, len: {}, val: {}",
+                        field_name, len, val
+                    )));
+                }
+            }
+            _ => {
+                return Err(RecordPageError::InvalidCall(
+                    "field is not string or not found".to_string(),
+                ))
+            }
+        }
         let offset = self.offset(slot, field_name)?;
         self.tx
             .borrow_mut()
@@ -116,7 +134,7 @@ impl RecordPage {
                     Some(crate::record::schema::FieldInfo::String(_)) => {
                         self.tx.borrow_mut().set_string(&self.block, offset, "", false)?;
                     }
-                    None => return Err(RecordPageError::InvalidCallError(
+                    None => return Err(RecordPageError::InvalidCall(
                         "field not found. It might be because the layout configuration was not correct."
                             .to_string(),
                     )),
@@ -165,9 +183,10 @@ impl RecordPage {
                 .tx
                 .borrow_mut()
                 .get_int(&self.block, self.root_offset(next_slot))?;
-            let flag = RecordPageFlag::from_i32(flag).ok_or(RecordPageError::InternalError(
-                format!("invalid flag found. slot: {}, flag: {}", next_slot, flag),
-            ))?;
+            let flag = RecordPageFlag::from_i32(flag).ok_or(RecordPageError::Internal(format!(
+                "invalid flag found. slot: {}, flag: {}",
+                next_slot, flag
+            )))?;
             if flag == target_flag {
                 return Ok(Some(next_slot));
             }
@@ -189,9 +208,7 @@ impl RecordPage {
             + self
                 .layout
                 .offset(field_name)
-                .ok_or(RecordPageError::InvalidCallError(
-                    "field not found".to_string(),
-                ))?)
+                .ok_or(RecordPageError::InvalidCall("field not found".to_string()))?)
     }
 
     fn root_offset(&self, slot: usize) -> usize {
@@ -307,6 +324,33 @@ mod record_page_test {
 
         // drop で unpin されているので、再び unpin しようとすると error になる
         assert!(tx.borrow_mut().unpin(&block).is_err());
+        tx.borrow_mut().commit().unwrap();
+    }
+
+    #[test]
+    fn test_it_forbids_long_string() {
+        let dir = tempdir().unwrap();
+        let factory = setup_factory(&dir);
+
+        let tx = Rc::new(RefCell::new(factory.create().unwrap()));
+
+        {
+            let block = BlockId::new("testfile", 0);
+            // 9 文字以上の文字列を保存するとエラーになる
+            let layout = setup_layout();
+            let mut record_page = RecordPage::new(tx.clone(), &block, &layout);
+
+            // format する
+            assert!(record_page.format().is_ok());
+
+            // insert していく
+            let slot = record_page.insert_after(None).unwrap().unwrap();
+            // 15 文字の文字列を insert しているのでエラーが起こる
+            assert!(record_page
+                .set_string(slot, "B", "too long string")
+                .is_err());
+        }
+
         tx.borrow_mut().commit().unwrap();
     }
 }
