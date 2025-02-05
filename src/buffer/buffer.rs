@@ -26,19 +26,19 @@ pub struct Buffer {
 #[derive(Error, Debug)]
 pub(crate) enum BufferError {
     #[error("I/O error: {0}")]
-    IoError(#[from] io::Error),
+    Io(#[from] io::Error),
     #[error("Error from log manager: {0}")]
-    LogError(#[from] log_manager::LogError),
+    Log(#[from] log_manager::LogError),
     #[error("Error from file manager: {0}")]
-    FileManagerError(#[from] file_manager::FileManagerError),
+    FileManager(#[from] file_manager::FileManagerError),
 }
 
 impl Buffer {
     pub fn new(fm: Arc<file_manager::FileManager>, lm: Arc<log_manager::LogManager>) -> Buffer {
         let block_size = fm.block_size();
         Buffer {
-            fm: fm,
-            lm: lm,
+            fm,
+            lm,
             block: None,
             contents: page::Page::new_from_size(block_size),
             pins: 0,
@@ -56,10 +56,7 @@ impl Buffer {
     }
 
     pub fn block(&self) -> Option<&blockid::BlockId> {
-        match self.block {
-            Some(ref block) => Some(block),
-            None => None,
-        }
+        self.block.as_ref()
     }
 
     // 更新を行ったことを記録する
@@ -92,7 +89,7 @@ impl Buffer {
     pub(crate) fn assign_to_block(&mut self, block: &blockid::BlockId) -> Result<(), BufferError> {
         self.flush()?;
         self.block = Some(block.clone());
-        self.fm.read(&block, &mut self.contents)?;
+        self.fm.read(block, &mut self.contents)?;
         self.pins = 0;
         Ok(())
     }

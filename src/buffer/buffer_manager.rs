@@ -27,13 +27,13 @@ pub struct BufferManager {
 #[derive(Error, Debug)]
 pub enum BufferManagerError {
     #[error("Error from buffer: {0}")]
-    BufferError(#[from] buffer::BufferError),
+    Buffer(#[from] buffer::BufferError),
     #[error("Failed to acquire lock")]
-    LockError,
+    Lock,
     #[error("Failed to pin buffer")]
-    PinError,
+    Pin,
     #[error("Log error: {0}")]
-    LogError(#[from] log_manager::LogError),
+    Log(#[from] log_manager::LogError),
 }
 
 impl BufferManager {
@@ -43,8 +43,7 @@ impl BufferManager {
         num_buffs: usize,
         max_pin_wait_time_ms: Option<u64>,
     ) -> BufferManager {
-        let mut buffer_pool = Vec::new();
-        buffer_pool.reserve(num_buffs);
+        let mut buffer_pool = Vec::with_capacity(num_buffs);
         for _ in 0..num_buffs {
             buffer_pool.push(Arc::new(Mutex::new(buffer::Buffer::new(
                 fm.clone(),
@@ -52,7 +51,7 @@ impl BufferManager {
             ))));
         }
         BufferManager {
-            buffer_pool: buffer_pool,
+            buffer_pool,
             num_available: Arc::new((Mutex::new(num_buffs), Condvar::new())),
             max_pin_wait_time_ms: match max_pin_wait_time_ms {
                 Some(ms) => ms,
@@ -64,16 +63,13 @@ impl BufferManager {
     // Buffer にある空きの buffer の数を返す
     pub fn available(&self) -> Result<usize, BufferManagerError> {
         let (value, _) = &*self.num_available;
-        Ok(value
-            .lock()
-            .map_err(|_| BufferManagerError::LockError)?
-            .clone())
+        Ok(*value.lock().map_err(|_| BufferManagerError::Lock)?)
     }
 
     // buffer pool に書き込まれた内容を block に書き込み、永続性を保証する
     pub fn flush_all(&self) -> Result<(), BufferManagerError> {
         for buf_lock in &self.buffer_pool {
-            let mut buf = buf_lock.lock().map_err(|_| BufferManagerError::LockError)?;
+            let mut buf = buf_lock.lock().map_err(|_| BufferManagerError::Lock)?;
             if buf.block().is_some() {
                 buf.flush()?;
             }
@@ -83,11 +79,11 @@ impl BufferManager {
 
     // 不要になった buffer を pin から外す
     pub fn unpin(&self, buf: Arc<Mutex<buffer::Buffer>>) -> Result<(), BufferManagerError> {
-        let mut buf = buf.lock().map_err(|_| BufferManagerError::LockError)?;
+        let mut buf = buf.lock().map_err(|_| BufferManagerError::Lock)?;
         buf.unpin();
         if !buf.is_pinned() {
             let (value, cond) = &*self.num_available;
-            let mut num_available = value.lock().map_err(|_| BufferManagerError::LockError)?;
+            let mut num_available = value.lock().map_err(|_| BufferManagerError::Lock)?;
             *num_available += 1;
             cond.notify_all();
         }
@@ -107,19 +103,19 @@ impl BufferManager {
             let (num_available_lock, cond) = &*self.num_available;
             let num_available = num_available_lock
                 .lock()
-                .map_err(|_| BufferManagerError::LockError)?;
+                .map_err(|_| BufferManagerError::Lock)?;
             let (_num_available, _) = cond
                 .wait_timeout(
                     num_available,
                     time::Duration::from_millis(self.max_pin_wait_time_ms),
                 )
-                .map_err(|_| BufferManagerError::PinError)?;
+                .map_err(|_| BufferManagerError::Pin)?;
             // buffer が空いた通知が来たので、再度 buffer 確保を試みる
             buff = self.try_to_pin(blk)?;
         }
         match buff {
             Some(b) => Ok(b),
-            None => Err(BufferManagerError::PinError),
+            None => Err(BufferManagerError::Pin),
         }
     }
 
@@ -139,7 +135,7 @@ impl BufferManager {
                     None => None,
                     Some(buf_lock) => {
                         // pin できる buffer が見つかった場合、その buffer に block を割り当てる
-                        let mut buf = buf_lock.lock().map_err(|_| BufferManagerError::LockError)?;
+                        let mut buf = buf_lock.lock().map_err(|_| BufferManagerError::Lock)?;
                         buf.assign_to_block(blk)?;
                         Some(buf_lock.clone())
                     }
@@ -148,12 +144,11 @@ impl BufferManager {
         };
         match maybe_buf_lock {
             Some(buf_lock) => {
-                let mut buf = buf_lock.lock().map_err(|_| BufferManagerError::LockError)?;
+                let mut buf = buf_lock.lock().map_err(|_| BufferManagerError::Lock)?;
                 if !buf.is_pinned() {
                     // pin する予定の buffer がこれ以前に pin されていない場合、この pin により available な buffer が一つ減ったことを意味する
                     let (value, _) = &*self.num_available;
-                    let mut num_available =
-                        value.lock().map_err(|_| BufferManagerError::LockError)?;
+                    let mut num_available = value.lock().map_err(|_| BufferManagerError::Lock)?;
                     *num_available -= 1;
                 }
 
@@ -170,7 +165,7 @@ impl BufferManager {
         blk: &blockid::BlockId,
     ) -> Result<Option<Arc<Mutex<buffer::Buffer>>>, BufferManagerError> {
         for buf_lock in &self.buffer_pool {
-            let buf = buf_lock.lock().map_err(|_| BufferManagerError::LockError)?;
+            let buf = buf_lock.lock().map_err(|_| BufferManagerError::Lock)?;
             if let Some(b) = buf.block() {
                 if b == blk {
                     return Ok(Some(buf_lock.clone()));
@@ -186,7 +181,7 @@ impl BufferManager {
         &self,
     ) -> Result<Option<Arc<Mutex<buffer::Buffer>>>, BufferManagerError> {
         for buf_lock in &self.buffer_pool {
-            let buf = buf_lock.lock().map_err(|_| BufferManagerError::LockError)?;
+            let buf = buf_lock.lock().map_err(|_| BufferManagerError::Lock)?;
             if !buf.is_pinned() {
                 return Ok(Some(buf_lock.clone()));
             }
@@ -233,7 +228,7 @@ mod test_buffer_manager {
         // buffer_manager の num_buffs が 3 に設定されているため、これ以上 buffer を確保することはできない
         let buf3 = buffer_manager.pin(&blockid::BlockId::new("testfile", 3));
         assert!(buf3.is_err());
-        assert!(matches!(buf3.err().unwrap(), BufferManagerError::PinError));
+        assert!(matches!(buf3.err().unwrap(), BufferManagerError::Pin));
 
         // buffer が解放されると、新しい buffer を確保することができる
         buffer_manager.unpin(buf0.unwrap()).unwrap();
