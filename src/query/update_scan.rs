@@ -1,3 +1,5 @@
+use mockall::automock;
+
 use super::constant::Constant;
 use crate::record::rid::Rid;
 use std::fmt;
@@ -14,6 +16,7 @@ pub struct UpdateScanError {
     source: Box<dyn std::error::Error + Send + Sync>,
 }
 
+#[automock]
 pub trait UpdateScan {
     fn set_val(&self, field_name: &str, val: &Constant) -> Result<(), UpdateScanError>;
     fn set_int(&self, field_name: &str, val: i32) -> Result<(), UpdateScanError>;

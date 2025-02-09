@@ -18,6 +18,7 @@ use super::{
     schema::FieldInfo,
 };
 
+use mockall::mock;
 use thiserror::Error;
 
 use std::{cell::RefCell, rc::Rc};
@@ -269,6 +270,28 @@ impl TableScanImpl {
         let block_num = self.record_page.block().number();
         Ok(block_num == self.tx.borrow_mut().size(&self.filename)? - 1)
     }
+}
+
+mock! {
+    pub TableScan {}
+    impl ReadScan for TableScan {
+        fn before_first(&mut self) -> Result<(), ReadScanError>;
+        fn move_next(&mut self) -> Result<bool, ReadScanError>;
+        fn get_val(&self, field_name: &str) -> Result<Constant, ReadScanError>;
+        fn get_int(&self, field_name: &str) -> Result<i32, ReadScanError>;
+        fn get_string(&self, field_name: &str) -> Result<String, ReadScanError>;
+        fn has_field(&self, field_name: &str) -> bool;
+    }
+    impl UpdateScan for TableScan {
+        fn set_val(&self, field_name: &str, val: &Constant) -> Result<(), UpdateScanError>;
+        fn set_int(&self, field_name: &str, val: i32) -> Result<(), UpdateScanError>;
+        fn set_string(&self, field_name: &str, val: &str) -> Result<(), UpdateScanError>;
+        fn insert(&mut self) -> Result<(), UpdateScanError>;
+        fn delete(&mut self) -> Result<(), UpdateScanError>;
+        fn move_to_rid(&mut self, rid: &Rid);
+        fn get_rid(&self) -> Rid;
+    }
+    impl TableScan for TableScan {}
 }
 
 #[cfg(test)]

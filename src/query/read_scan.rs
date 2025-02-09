@@ -1,3 +1,5 @@
+use mockall::automock;
+
 use super::constant::Constant;
 use std::fmt;
 
@@ -13,6 +15,7 @@ pub struct ReadScanError {
     source: Box<dyn std::error::Error + Send + Sync>,
 }
 
+#[automock]
 pub trait ReadScan {
     /// table scan の cursor を先頭に移動する
     fn before_first(&mut self) -> Result<(), ReadScanError>;

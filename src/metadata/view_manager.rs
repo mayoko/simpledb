@@ -120,7 +120,14 @@ impl<'a> ViewManager<'a> {
 
 #[cfg(test)]
 mod view_manager_test {
-    use crate::metadata::table_manager::MockTableManager;
+    use crate::{
+        metadata::table_manager::{self, MockTableManager},
+        record::{
+            layout::Layout,
+            table_scan::{MockTableScan, TableScan},
+            table_scan_factory::MockTableScanFactoryImpl,
+        },
+    };
 
     use super::*;
     use crate::{
@@ -129,6 +136,7 @@ mod view_manager_test {
         tx::transaction::TransactionFactory,
     };
 
+    use mockall::predicate::eq;
     use std::sync::Arc;
     use tempfile::{tempdir, TempDir};
 
@@ -151,28 +159,173 @@ mod view_manager_test {
         let factory = setup_factory(&dir);
 
         // table manager が create_table を呼び出すことを確認
-        let mut table_manager = MockTableManager::new();
-        let mut schema = Schema::new();
-        schema.add_field(
-            VIEWCAT_VIEW_NAME_FIELD,
-            FieldInfo::String(MAX_VIEW_NAME_LENGTH),
-        );
-        schema.add_field(
-            VIEWCAT_VIEW_DEF_FIELD,
-            FieldInfo::String(MAX_VIEWDEF_LENGTH),
-        );
-        table_manager
-            .expect_create_table()
-            .withf(move |actual_table, actual_schema, _actual_tx| {
-                actual_schema.clone() == schema && actual_table == VIEWCAT_TABLE_NAME
-            })
-            .times(1)
-            .returning(|_, _, _| Ok(()));
-        let table_scan_factory = TableScanFactoryImpl::new();
+        let table_manager = {
+            let mut table_manager = MockTableManager::new();
+            let mut schema = Schema::new();
+            schema.add_field(
+                VIEWCAT_VIEW_NAME_FIELD,
+                FieldInfo::String(MAX_VIEW_NAME_LENGTH),
+            );
+            schema.add_field(
+                VIEWCAT_VIEW_DEF_FIELD,
+                FieldInfo::String(MAX_VIEWDEF_LENGTH),
+            );
+            table_manager
+                .expect_create_table()
+                .withf(move |actual_table, actual_schema, _actual_tx| {
+                    actual_schema.clone() == schema && actual_table == VIEWCAT_TABLE_NAME
+                })
+                .times(1)
+                .returning(|_, _, _| Ok(()));
+            table_manager
+        };
 
+        let table_scan_factory = TableScanFactoryImpl::new();
         let view_manager = ViewManager::new(&table_manager, Box::new(table_scan_factory));
         let tx = Rc::new(RefCell::new(factory.create().unwrap()));
 
         view_manager.setup_if_not_exists(tx.clone()).unwrap();
+    }
+
+    #[test]
+    fn test_create_view() {
+        let dir = tempdir().unwrap();
+        let factory = setup_factory(&dir);
+
+        // table manager が get_layout を呼び出すことを確認
+        let table_manager = {
+            let mut table_manager = MockTableManager::new();
+            table_manager
+                .expect_get_layout()
+                .times(1)
+                .returning(|_, _| {
+                    let mut schema = Schema::new();
+                    schema.add_field(
+                        VIEWCAT_VIEW_NAME_FIELD,
+                        FieldInfo::String(MAX_VIEW_NAME_LENGTH),
+                    );
+                    schema.add_field(
+                        VIEWCAT_VIEW_DEF_FIELD,
+                        FieldInfo::String(MAX_VIEWDEF_LENGTH),
+                    );
+                    let layout = Layout::new(schema).unwrap();
+                    Ok(layout)
+                });
+            table_manager
+        };
+
+        // table scan の挙動を確認
+        let table_scan_factory = {
+            let mut table_scan_factory = MockTableScanFactoryImpl::new();
+            // create_view で table_scan_factory が create を呼び出すことを確認
+            table_scan_factory
+                .expect_create()
+                .withf(move |_, actual_table, actual_layout| {
+                    actual_table == VIEWCAT_TABLE_NAME
+                        && actual_layout.schema().has_field(VIEWCAT_VIEW_NAME_FIELD)
+                        && actual_layout.schema().has_field(VIEWCAT_VIEW_DEF_FIELD)
+                })
+                .times(1)
+                .returning(move |_, _, _| {
+                    let table_scan = {
+                        let mut table_scan = MockTableScan::new();
+                        {
+                            table_scan.expect_insert().times(1).returning(|| Ok(()));
+                            table_scan
+                                .expect_set_string()
+                                .with(eq(VIEWCAT_VIEW_NAME_FIELD), eq("view1"))
+                                .times(1)
+                                .returning(|_, _| Ok(()));
+                            table_scan
+                                .expect_set_string()
+                                .with(eq(VIEWCAT_VIEW_DEF_FIELD), eq("select * from table1"))
+                                .times(1)
+                                .returning(|_, _| Ok(()));
+                        }
+                        table_scan
+                    };
+                    Ok(Box::new(table_scan) as Box<dyn TableScan>)
+                });
+            table_scan_factory
+        };
+
+        let view_manager = ViewManager::new(&table_manager, Box::new(table_scan_factory));
+        let tx = Rc::new(RefCell::new(factory.create().unwrap()));
+
+        view_manager
+            .create_view("view1", "select * from table1", tx)
+            .unwrap();
+    }
+
+    #[test]
+    fn test_get_view_def() {
+        let dir = tempdir().unwrap();
+        let factory = setup_factory(&dir);
+
+        // table manager が get_layout を呼び出すことを確認
+        let table_manager = {
+            let mut table_manager = MockTableManager::new();
+            table_manager
+                .expect_get_layout()
+                .times(1)
+                .returning(|_, _| {
+                    let mut schema = Schema::new();
+                    schema.add_field(
+                        VIEWCAT_VIEW_NAME_FIELD,
+                        FieldInfo::String(MAX_VIEW_NAME_LENGTH),
+                    );
+                    schema.add_field(
+                        VIEWCAT_VIEW_DEF_FIELD,
+                        FieldInfo::String(MAX_VIEWDEF_LENGTH),
+                    );
+                    let layout = Layout::new(schema).unwrap();
+                    Ok(layout)
+                });
+            table_manager
+        };
+
+        // table scan の挙動を確認
+        let table_scan_factory = {
+            let mut table_scan_factory = MockTableScanFactoryImpl::new();
+            // create_view で table_scan_factory が create を呼び出すことを確認
+            table_scan_factory
+                .expect_create()
+                .withf(move |_, actual_table, actual_layout| {
+                    actual_table == VIEWCAT_TABLE_NAME
+                        && actual_layout.schema().has_field(VIEWCAT_VIEW_NAME_FIELD)
+                        && actual_layout.schema().has_field(VIEWCAT_VIEW_DEF_FIELD)
+                })
+                .times(1)
+                .returning(move |_, _, _| {
+                    let table_scan = {
+                        let mut table_scan = MockTableScan::new();
+                        table_scan
+                            .expect_move_next()
+                            .times(1)
+                            .returning(|| Ok(true));
+
+                        // record の中身は view1, select * from table1 とする
+                        table_scan
+                            .expect_get_string()
+                            .withf(move |field_name| field_name == VIEWCAT_VIEW_NAME_FIELD)
+                            .times(1)
+                            .returning(|_| Ok("view1".to_string()));
+                        table_scan
+                            .expect_get_string()
+                            .withf(move |field_name| field_name == VIEWCAT_VIEW_DEF_FIELD)
+                            .times(1)
+                            .returning(|_| Ok("select * from table1".to_string()));
+                        table_scan
+                    };
+                    Ok(Box::new(table_scan) as Box<dyn TableScan>)
+                });
+            table_scan_factory
+        };
+
+        let view_manager = ViewManager::new(&table_manager, Box::new(table_scan_factory));
+        let tx = Rc::new(RefCell::new(factory.create().unwrap()));
+
+        let def = view_manager.get_view_def("view1", tx).unwrap();
+        assert_eq!(def, "select * from table1");
     }
 }

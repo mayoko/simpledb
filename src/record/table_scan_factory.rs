@@ -6,6 +6,7 @@ use super::layout::Layout;
 
 use super::record_page::{RecordPage, RecordPageError};
 use super::table_scan::{TableScan, TableScanImpl};
+use mockall::automock;
 use std::{cell::RefCell, rc::Rc};
 use thiserror::Error;
 
@@ -36,6 +37,7 @@ impl TableScanFactoryImpl {
     }
 }
 
+#[automock]
 impl TableScanFactory for TableScanFactoryImpl {
     /// table scan を作成する
     /// table が存在しない場合は新しく作成される
