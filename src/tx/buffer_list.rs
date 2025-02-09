@@ -26,11 +26,11 @@ pub(crate) struct BufferList {
 #[derive(Error, Debug)]
 pub enum BufferListError {
     #[error("buffer manager error")]
-    BufferManagerError(#[from] BufferManagerError),
+    BufferManager(#[from] BufferManagerError),
     #[error("buffer list error caused by invalid method call: {0}")]
-    InvalidMethodCallError(String),
+    InvalidMethodCall(String),
     #[error("buffer list error caused by invalid state. it is likely because state management in this class is not appropriate: {0}")]
-    InvalidStateError(String),
+    InvalidState(String),
 }
 
 impl BufferList {
@@ -81,13 +81,13 @@ impl BufferList {
                         }
                         Ok(())
                     }
-                    None => Err(BufferListError::InvalidMethodCallError(format!(
+                    None => Err(BufferListError::InvalidMethodCall(format!(
                         "block {} is not pinned",
                         block
                     ))),
                 }
             }
-            Entry::Vacant(_) => Err(BufferListError::InvalidMethodCallError(format!(
+            Entry::Vacant(_) => Err(BufferListError::InvalidMethodCall(format!(
                 "block {} is not pinned",
                 block
             ))),
@@ -101,7 +101,7 @@ impl BufferList {
                     self.buffer_manager.unpin(buffer.clone())?;
                 }
                 None => {
-                    return Err(BufferListError::InvalidStateError(format!(
+                    return Err(BufferListError::InvalidState(format!(
                         "block {} is not pinned",
                         block
                     )));
