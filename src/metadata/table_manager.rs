@@ -1,5 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
+use mockall::automock;
 use thiserror::Error;
 
 use crate::{
@@ -8,64 +9,70 @@ use crate::{
         FCAT_TYPE_FIELD, FLDCAT_TABLE_NAME, MAX_TABLE_NAME_LENGTH, TBLCAT_SLOTSIZE_FIELD,
         TBLCAT_TABLE_NAME,
     },
+    query::{read_scan::ReadScanError, update_scan::UpdateScanError},
     record::{
         layout::{Layout, LayoutError},
         schema::{FieldInfo, FieldType, Schema},
-        table_scan::{TableScan, TableScanError},
+        table_scan_factory::{TableScanFactory, TableScanFactoryError, TableScanFactoryImpl},
     },
     tx::transaction::Transaction,
 };
 
 use super::constants::MAX_FIELD_NAME_LENGTH;
 
+#[automock]
+pub trait TableManager {
+    /// table manager が table を管理するために必要なファイルがまだ作成されていない場合、作成する
+    /// このメソッドは何回呼んでも問題ない
+    fn setup_if_not_exists(&self, tx: Rc<RefCell<Transaction>>) -> Result<(), TableManagerError>;
+    // 新しい table を作成する
+    // Warning: すでに table が存在する場合、エラーを返すべきだが、その確認は特にしていない
+    fn create_table(
+        &self,
+        table_name: &str,
+        schema: Schema,
+        tx: Rc<RefCell<Transaction>>,
+    ) -> Result<(), TableManagerError>;
+    fn get_layout(
+        &self,
+        table_name: &str,
+        tx: Rc<RefCell<Transaction>>,
+    ) -> Result<Layout, TableManagerError>;
+}
+
 /**
  * table の作成及び table の定義情報の取得を行うためのクラス
  *
  * 内部的には tblcat という table に table の一覧を保存し、fldcat という table に各 table の field の情報を保存している
  */
-pub struct TableManager {
+pub struct TableManagerImpl {
     tcat_layout: Layout,
     fcat_layout: Layout,
+    table_scan_factory: Box<dyn TableScanFactory>,
 }
 
 #[derive(Error, Debug)]
 pub(crate) enum TableManagerError {
     #[error("layout error: {0}")]
     Layout(#[from] LayoutError),
-    #[error("table scan error: {0}")]
-    TableScan(#[from] TableScanError),
+    #[error("table scan factory error: {0}")]
+    TableScanFactory(#[from] TableScanFactoryError),
+    #[error("read scan error: {0}")]
+    ReadScan(#[from] ReadScanError),
+    #[error("update scan error: {0}")]
+    UpdateScan(#[from] UpdateScanError),
     #[error("invalid call error: {0}")]
     InvalidCall(String),
     #[error("internal error: {0}")]
     Internal(String),
 }
 
-impl TableManager {
-    pub fn new() -> Result<Self, LayoutError> {
-        let mut tcat_schema = Schema::new();
-        tcat_schema.add_field(TBLCAT_TABLE_NAME, FieldInfo::String(MAX_TABLE_NAME_LENGTH));
-        tcat_schema.add_field(TBLCAT_SLOTSIZE_FIELD, FieldInfo::Integer);
-        let tcat_layout = Layout::new(tcat_schema)?;
-
-        let mut fcat_schema = Schema::new();
-        fcat_schema.add_field(FCAT_TBLNAME_FIELD, FieldInfo::String(MAX_TABLE_NAME_LENGTH));
-        fcat_schema.add_field(FCAT_FLDNAME_FIELD, FieldInfo::String(MAX_FIELD_NAME_LENGTH));
-        fcat_schema.add_field(FCAT_TYPE_FIELD, FieldInfo::Integer);
-        fcat_schema.add_field(FCAT_LENGTH_FIELD, FieldInfo::Integer);
-        fcat_schema.add_field(FCAT_OFFSET_FIELD, FieldInfo::Integer);
-        let fcat_layout = Layout::new(fcat_schema)?;
-
-        Ok(Self {
-            tcat_layout,
-            fcat_layout,
-        })
-    }
-
-    // table manager が table を管理するために必要なファイルがまだ作成されていない場合、作成する
-    // このメソッドは何回呼んでも問題ない
+impl TableManager for TableManagerImpl {
     fn setup_if_not_exists(&self, tx: Rc<RefCell<Transaction>>) -> Result<(), TableManagerError> {
         // tblcat テーブルに tblcat 自身の情報が書いていなければ、初期化をしていなかったと判断して初期化を行う
-        let mut tcat = TableScan::new(tx.clone(), TBLCAT_TABLE_NAME, &self.tcat_layout)?;
+        let mut tcat =
+            self.table_scan_factory
+                .create(tx.clone(), TBLCAT_TABLE_NAME, &self.tcat_layout)?;
         while tcat.move_next()? {
             if tcat.get_string(TBLCAT_TABLE_NAME)? == TBLCAT_TABLE_NAME {
                 return Ok(());
@@ -80,9 +87,9 @@ impl TableManager {
         Ok(())
     }
 
-    // 新しい table を作成する
-    // Warning: すでに table が存在する場合、エラーを返すべきだが、その確認は特にしていない
-    pub fn create_table(
+    /// 新しい table を作成する
+    /// Warning: すでに table が存在する場合、エラーを返すべきだが、その確認は特にしていない
+    fn create_table(
         &self,
         table_name: &str,
         schema: Schema,
@@ -91,14 +98,18 @@ impl TableManager {
         let layout = Layout::new(schema.clone())?;
 
         {
-            let mut tcat = TableScan::new(tx.clone(), TBLCAT_TABLE_NAME, &self.tcat_layout)?;
+            let mut tcat =
+                self.table_scan_factory
+                    .create(tx.clone(), TBLCAT_TABLE_NAME, &self.tcat_layout)?;
             tcat.insert()?;
             tcat.set_string(TBLCAT_TABLE_NAME, table_name)?;
             tcat.set_int(TBLCAT_SLOTSIZE_FIELD, layout.slot_size() as i32)?;
         }
 
         {
-            let mut fcat = TableScan::new(tx.clone(), FLDCAT_TABLE_NAME, &self.fcat_layout)?;
+            let mut fcat =
+                self.table_scan_factory
+                    .create(tx.clone(), FLDCAT_TABLE_NAME, &self.fcat_layout)?;
             for field in &schema.fields() {
                 fcat.insert()?;
                 fcat.set_string(FCAT_TBLNAME_FIELD, table_name)?;
@@ -137,7 +148,7 @@ impl TableManager {
     }
 
     // table の layout を取得する
-    pub fn get_layout(
+    fn get_layout(
         &self,
         table_name: &str,
         tx: Rc<RefCell<Transaction>>,
@@ -149,13 +160,38 @@ impl TableManager {
             schema, offsets, slot_size,
         ))
     }
+}
+
+impl TableManagerImpl {
+    pub fn new(table_scan_factory: Box<dyn TableScanFactory>) -> Result<Self, LayoutError> {
+        let mut tcat_schema = Schema::new();
+        tcat_schema.add_field(TBLCAT_TABLE_NAME, FieldInfo::String(MAX_TABLE_NAME_LENGTH));
+        tcat_schema.add_field(TBLCAT_SLOTSIZE_FIELD, FieldInfo::Integer);
+        let tcat_layout = Layout::new(tcat_schema)?;
+
+        let mut fcat_schema = Schema::new();
+        fcat_schema.add_field(FCAT_TBLNAME_FIELD, FieldInfo::String(MAX_TABLE_NAME_LENGTH));
+        fcat_schema.add_field(FCAT_FLDNAME_FIELD, FieldInfo::String(MAX_FIELD_NAME_LENGTH));
+        fcat_schema.add_field(FCAT_TYPE_FIELD, FieldInfo::Integer);
+        fcat_schema.add_field(FCAT_LENGTH_FIELD, FieldInfo::Integer);
+        fcat_schema.add_field(FCAT_OFFSET_FIELD, FieldInfo::Integer);
+        let fcat_layout = Layout::new(fcat_schema)?;
+
+        Ok(Self {
+            tcat_layout,
+            fcat_layout,
+            table_scan_factory,
+        })
+    }
 
     fn get_record_size(
         &self,
         table_name: &str,
         tx: Rc<RefCell<Transaction>>,
     ) -> Result<usize, TableManagerError> {
-        let mut tcat = TableScan::new(tx, TBLCAT_TABLE_NAME, &self.tcat_layout)?;
+        let mut tcat = self
+            .table_scan_factory
+            .create(tx, TBLCAT_TABLE_NAME, &self.tcat_layout)?;
         while tcat.move_next()? {
             if tcat.get_string(TBLCAT_TABLE_NAME)? == table_name {
                 return Ok(tcat.get_int(TBLCAT_SLOTSIZE_FIELD)? as usize);
@@ -174,7 +210,9 @@ impl TableManager {
     ) -> Result<(Schema, HashMap<String, usize>), TableManagerError> {
         let mut schema = Schema::new();
         let mut offsets = HashMap::new();
-        let mut fcat = TableScan::new(tx, FLDCAT_TABLE_NAME, &self.fcat_layout)?;
+        let mut fcat = self
+            .table_scan_factory
+            .create(tx, FLDCAT_TABLE_NAME, &self.fcat_layout)?;
         while fcat.move_next()? {
             if fcat.get_string(FCAT_TBLNAME_FIELD)? == table_name {
                 let field_name = fcat.get_string(FCAT_FLDNAME_FIELD)?;
@@ -238,8 +276,9 @@ mod table_manager_test {
         let dir = tempdir().unwrap();
         let factory = setup_factory(&dir);
         let tx = Rc::new(RefCell::new(factory.create().unwrap()));
+        let table_scan_factory = Box::new(TableScanFactoryImpl::new());
 
-        let table_manager = TableManager::new().unwrap();
+        let table_manager = TableManagerImpl::new(table_scan_factory).unwrap();
         table_manager.setup_if_not_exists(tx.clone()).unwrap();
         // table 管理用に作成した tblcat, fldcat が存在する
         assert!(table_manager
@@ -265,8 +304,9 @@ mod table_manager_test {
         let dir = tempdir().unwrap();
         let factory = setup_factory(&dir);
         let tx = Rc::new(RefCell::new(factory.create().unwrap()));
+        let table_scan_factory = Box::new(TableScanFactoryImpl::new());
 
-        let table_manager = TableManager::new().unwrap();
+        let table_manager = TableManagerImpl::new(table_scan_factory).unwrap();
         table_manager.setup_if_not_exists(tx.clone()).unwrap();
 
         let layout = setup_layout();

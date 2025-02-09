@@ -33,12 +33,12 @@ impl LogIterator {
     ) -> Result<LogIterator, file_manager::FileManagerError> {
         let block_size = fm.block_size();
         let mut log_iterator = LogIterator {
-            fm: fm,
+            fm,
             block: block.clone(),
             page: page::Page::new_from_size(block_size),
             current_pos: 0,
         };
-        log_iterator.move_to_block(&block)?;
+        log_iterator.move_to_block(block)?;
 
         Ok(log_iterator)
     }
