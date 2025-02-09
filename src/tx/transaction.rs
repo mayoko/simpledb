@@ -50,67 +50,67 @@ pub struct TransactionFactory {
 #[derive(Error, Debug)]
 pub enum TransactionCommitError {
     #[error("Lock table error: {0}")]
-    LockTableError(#[from] LockTableError),
+    LockTable(#[from] LockTableError),
     #[error("Log record error: {0}")]
-    LogRecordError(#[from] LogRecordError),
+    LogRecord(#[from] LogRecordError),
     #[error("Buffer list error: {0}")]
-    BufferListError(#[from] BufferListError),
+    BufferList(#[from] BufferListError),
 }
 
 #[derive(Error, Debug)]
 pub enum TransactionRollbackError {
     #[error("Lock table error: {0}")]
-    LockTableError(#[from] LockTableError),
+    LockTable(#[from] LockTableError),
     #[error("Log record error: {0}")]
-    LogRecordError(#[from] LogRecordError),
+    LogRecord(#[from] LogRecordError),
     #[error("Buffer list error: {0}")]
-    BufferListError(#[from] BufferListError),
+    BufferList(#[from] BufferListError),
     #[error("Log error: {0}")]
-    LogError(#[from] LogError),
+    Log(#[from] LogError),
     #[error("log replay error: {0}")]
-    LogReplayError(#[from] LogReplayError),
+    LogReplay(#[from] LogReplayError),
 }
 
 #[derive(Error, Debug)]
 pub enum TransactionRecoverError {
     #[error("Lock table error: {0}")]
-    LockTableError(#[from] LockTableError),
+    LockTable(#[from] LockTableError),
     #[error("Log record error: {0}")]
-    LogRecordError(#[from] LogRecordError),
+    LogRecord(#[from] LogRecordError),
     #[error("Log error: {0}")]
-    LogError(#[from] LogError),
+    Log(#[from] LogError),
     #[error("log replay error: {0}")]
-    LogReplayError(#[from] LogReplayError),
+    LogReplay(#[from] LogReplayError),
     #[error("buffer manager error: {0}")]
-    BufferManagerError(#[from] BufferManagerError),
+    BufferManager(#[from] BufferManagerError),
     #[error("file manager error: {0}")]
-    FileManagerError(#[from] FileManagerError),
+    FileManager(#[from] FileManagerError),
 }
 
 #[derive(Error, Debug)]
 pub enum TransactionGetError {
     #[error("Lock table error: {0}")]
-    LockTableError(#[from] LockTableError),
+    LockTable(#[from] LockTableError),
     #[error("Buffer list error: {0}")]
-    BufferListError(#[from] BufferListError),
+    BufferList(#[from] BufferListError),
     #[error("lock error: {0}")]
-    LockError(String),
+    Lock(String),
     #[error("invalid method call error: {0}")]
-    InvalidMethodCallError(String),
+    InvalidMethodCall(String),
     #[error("from utf8 error: {0}")]
-    FromUtf8Error(#[from] std::string::FromUtf8Error),
+    FromUtf8(#[from] std::string::FromUtf8Error),
 }
 
 #[derive(Error, Debug)]
 pub enum TransactionSetError {
     #[error("Lock table error: {0}")]
-    LockTableError(#[from] LockTableError),
+    LockTable(#[from] LockTableError),
     #[error("Log record error: {0}")]
     LogRecordError(#[from] LogRecordError),
     #[error("lock error: {0}")]
-    LockError(String),
+    Lock(String),
     #[error("invalid method call error: {0}")]
-    InvalidMethodCallError(String),
+    InvalidMethodCall(String),
 }
 
 #[derive(Error, Debug)]
@@ -172,15 +172,13 @@ impl Transaction {
     pub fn get_int(&mut self, block: &BlockId, offset: usize) -> Result<i32, TransactionGetError> {
         self.concurrency_manager.slock(block)?;
         let buffer = self.buffer_list.get_buffer(block).ok_or_else(|| {
-            TransactionGetError::InvalidMethodCallError(
+            TransactionGetError::InvalidMethodCall(
                 "buffer must be pinned first to read the value".to_string(),
             )
         })?;
-        let buffer = buffer.lock().or_else(|_| {
-            Err(TransactionGetError::LockError(
-                "Failed to lock buffer".to_string(),
-            ))
-        })?;
+        let buffer = buffer
+            .lock()
+            .map_err(|_| TransactionGetError::Lock("Failed to lock buffer".to_string()))?;
         let page = buffer.contents();
         Ok(page.get_int(offset))
     }
@@ -192,15 +190,13 @@ impl Transaction {
     ) -> Result<String, TransactionGetError> {
         self.concurrency_manager.slock(block)?;
         let buffer = self.buffer_list.get_buffer(block).ok_or_else(|| {
-            TransactionGetError::InvalidMethodCallError(
+            TransactionGetError::InvalidMethodCall(
                 "buffer must be pinned first to read the value".to_string(),
             )
         })?;
-        let buffer = buffer.lock().or_else(|_| {
-            Err(TransactionGetError::LockError(
-                "Failed to lock buffer".to_string(),
-            ))
-        })?;
+        let buffer = buffer
+            .lock()
+            .map_err(|_| TransactionGetError::Lock("Failed to lock buffer".to_string()))?;
         let page = buffer.contents();
         Ok(page.get_string(offset)?)
     }
@@ -214,15 +210,13 @@ impl Transaction {
     ) -> Result<(), TransactionSetError> {
         self.concurrency_manager.xlock(block)?;
         let buffer = self.buffer_list.get_buffer(block).ok_or_else(|| {
-            TransactionSetError::InvalidMethodCallError(
+            TransactionSetError::InvalidMethodCall(
                 "buffer must be pinned first to set the value".to_string(),
             )
         })?;
-        let mut buffer = buffer.lock().or_else(|_| {
-            Err(TransactionSetError::LockError(
-                "Failed to lock buffer".to_string(),
-            ))
-        })?;
+        let mut buffer = buffer
+            .lock()
+            .map_err(|_| TransactionSetError::Lock("Failed to lock buffer".to_string()))?;
         let lsn = if is_ok_to_log {
             let lsn = self
                 .log_record_writer
@@ -248,15 +242,13 @@ impl Transaction {
     ) -> Result<(), TransactionSetError> {
         self.concurrency_manager.xlock(block)?;
         let buffer = self.buffer_list.get_buffer(block).ok_or_else(|| {
-            TransactionSetError::InvalidMethodCallError(
+            TransactionSetError::InvalidMethodCall(
                 "buffer must be pinned first to set the value".to_string(),
             )
         })?;
-        let mut buffer = buffer.lock().or_else(|_| {
-            Err(TransactionSetError::LockError(
-                "Failed to lock buffer".to_string(),
-            ))
-        })?;
+        let mut buffer = buffer
+            .lock()
+            .map_err(|_| TransactionSetError::Lock("Failed to lock buffer".to_string()))?;
         let lsn = if is_ok_to_log {
             let lsn = self
                 .log_record_writer
@@ -296,8 +288,8 @@ impl Transaction {
 
     fn do_rollback(&mut self) -> Result<(), TransactionRollbackError> {
         // commit 済のトランザクションのリスト
-        let mut iter = LogRecordIterator::new(self.log_manager.clone())?;
-        while let Some(log_record) = iter.next() {
+        let iter = LogRecordIterator::new(self.log_manager.clone())?;
+        for log_record in iter {
             match log_record {
                 LogRecord::Start(inner) => {
                     if inner.tx_num() == self.txnum {
@@ -329,7 +321,7 @@ impl Transaction {
         // commit 済のトランザクションのリスト
         let mut committed_txs: HashSet<u32> = HashSet::new();
         let mut iter = LogRecordIterator::new(self.log_manager.clone())?;
-        while let Some(log_record) = iter.next() {
+        for log_record in iter.by_ref() {
             match log_record {
                 LogRecord::CheckPoint() => {
                     // redo stage へ移行
@@ -353,8 +345,8 @@ impl Transaction {
         }
 
         // redo stage
-        let mut rev_iter = LogRecordReverseIterator::new(&iter)?;
-        while let Some(log_record) = rev_iter.next() {
+        let rev_iter = LogRecordReverseIterator::new(&iter)?;
+        for log_record in rev_iter {
             // commit された変更を再適用する
             match log_record {
                 LogRecord::SetStringRecord(record) => {
