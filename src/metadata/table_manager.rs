@@ -13,7 +13,7 @@ use crate::{
     record::{
         layout::{Layout, LayoutError},
         schema::{FieldInfo, FieldType, Schema},
-        table_scan_factory::{TableScanFactory, TableScanFactoryError, TableScanFactoryImpl},
+        table_scan_factory::{TableScanFactory, TableScanFactoryError},
     },
     tx::transaction::Transaction,
 };
@@ -243,9 +243,11 @@ impl TableManagerImpl {
 mod table_manager_test {
     use super::*;
     use crate::{
-        buffer::buffer_manager::BufferManager, file::file_manager::FileManager,
-        log::log_manager::LogManager, tx::concurrency::lock_table::LockTable,
-        tx::transaction::TransactionFactory,
+        buffer::buffer_manager::BufferManager,
+        file::file_manager::FileManager,
+        log::log_manager::LogManager,
+        record::table_scan_factory::TableScanFactoryImpl,
+        tx::{concurrency::lock_table::LockTable, transaction::TransactionFactory},
     };
     use std::sync::Arc;
     use tempfile::{tempdir, TempDir};

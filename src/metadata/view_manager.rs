@@ -6,7 +6,7 @@ use crate::{
     query::{read_scan::ReadScanError, update_scan::UpdateScanError},
     record::{
         schema::{FieldInfo, Schema},
-        table_scan_factory::{TableScanFactory, TableScanFactoryError, TableScanFactoryImpl},
+        table_scan_factory::{TableScanFactory, TableScanFactoryError},
     },
     tx::transaction::Transaction,
 };
@@ -19,12 +19,27 @@ use super::{
     table_manager::{TableManager, TableManagerError},
 };
 
+pub trait ViewManager {
+    fn setup_if_not_exists(&self, tx: Rc<RefCell<Transaction>>) -> Result<(), ViewManagerError>;
+    fn create_view(
+        &self,
+        view_name: &str,
+        view_def: &str,
+        tx: Rc<RefCell<Transaction>>,
+    ) -> Result<(), ViewManagerError>;
+    fn get_view_def(
+        &self,
+        view_name: &str,
+        tx: Rc<RefCell<Transaction>>,
+    ) -> Result<String, ViewManagerError>;
+}
+
 /**
  * View の作成及び View の定義情報の取得を行うためのクラス
  *
  * 内部的には viewcat という table に View の定義情報を保存している
  */
-pub struct ViewManager<'a> {
+pub struct ViewManagerImpl<'a> {
     table_manager: &'a dyn TableManager,
     table_scan_factory: Box<dyn TableScanFactory>,
 }
@@ -43,23 +58,22 @@ pub(crate) enum ViewManagerError {
     InvalidCall(String),
 }
 
-impl<'a> ViewManager<'a> {
+impl<'a> ViewManagerImpl<'a> {
     pub fn new(
         table_manager: &'a dyn TableManager,
         table_scan_factory: Box<dyn TableScanFactory>,
-    ) -> ViewManager<'a> {
-        ViewManager {
+    ) -> ViewManagerImpl<'a> {
+        ViewManagerImpl {
             table_manager,
             table_scan_factory,
         }
     }
+}
 
+impl<'a> ViewManager for ViewManagerImpl<'a> {
     // view manager が view を管理するために必要なファイルがまだ作成されていない場合、作成する
     // このメソッドは何回呼んでも問題ない
-    pub fn setup_if_not_exists(
-        &self,
-        tx: Rc<RefCell<Transaction>>,
-    ) -> Result<(), ViewManagerError> {
+    fn setup_if_not_exists(&self, tx: Rc<RefCell<Transaction>>) -> Result<(), ViewManagerError> {
         let mut schema = Schema::new();
         schema.add_field(
             VIEWCAT_VIEW_NAME_FIELD,
@@ -76,7 +90,7 @@ impl<'a> ViewManager<'a> {
     }
 
     // view を作成する
-    pub fn create_view(
+    fn create_view(
         &self,
         view_name: &str,
         view_def: &str,
@@ -95,7 +109,7 @@ impl<'a> ViewManager<'a> {
     }
 
     // view の定義情報を取得する
-    pub fn get_view_def(
+    fn get_view_def(
         &self,
         view_name: &str,
         tx: Rc<RefCell<Transaction>>,
@@ -121,11 +135,11 @@ impl<'a> ViewManager<'a> {
 #[cfg(test)]
 mod view_manager_test {
     use crate::{
-        metadata::table_manager::{self, MockTableManager},
+        metadata::table_manager::MockTableManager,
         record::{
             layout::Layout,
             table_scan::{MockTableScan, TableScan},
-            table_scan_factory::MockTableScanFactory,
+            table_scan_factory::{MockTableScanFactory, TableScanFactoryImpl},
         },
     };
 
@@ -181,7 +195,7 @@ mod view_manager_test {
         };
 
         let table_scan_factory = TableScanFactoryImpl::new();
-        let view_manager = ViewManager::new(&table_manager, Box::new(table_scan_factory));
+        let view_manager = ViewManagerImpl::new(&table_manager, Box::new(table_scan_factory));
         let tx = Rc::new(RefCell::new(factory.create().unwrap()));
 
         view_manager.setup_if_not_exists(tx.clone()).unwrap();
@@ -249,7 +263,7 @@ mod view_manager_test {
             table_scan_factory
         };
 
-        let view_manager = ViewManager::new(&table_manager, Box::new(table_scan_factory));
+        let view_manager = ViewManagerImpl::new(&table_manager, Box::new(table_scan_factory));
         let tx = Rc::new(RefCell::new(factory.create().unwrap()));
 
         view_manager
@@ -322,7 +336,7 @@ mod view_manager_test {
             table_scan_factory
         };
 
-        let view_manager = ViewManager::new(&table_manager, Box::new(table_scan_factory));
+        let view_manager = ViewManagerImpl::new(&table_manager, Box::new(table_scan_factory));
         let tx = Rc::new(RefCell::new(factory.create().unwrap()));
 
         let def = view_manager.get_view_def("view1", tx).unwrap();
