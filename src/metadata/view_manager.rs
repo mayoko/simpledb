@@ -125,7 +125,7 @@ mod view_manager_test {
         record::{
             layout::Layout,
             table_scan::{MockTableScan, TableScan},
-            table_scan_factory::MockTableScanFactoryImpl,
+            table_scan_factory::MockTableScanFactory,
         },
     };
 
@@ -216,7 +216,7 @@ mod view_manager_test {
 
         // table scan の挙動を確認
         let table_scan_factory = {
-            let mut table_scan_factory = MockTableScanFactoryImpl::new();
+            let mut table_scan_factory = MockTableScanFactory::new();
             // create_view で table_scan_factory が create を呼び出すことを確認
             table_scan_factory
                 .expect_create()
@@ -286,7 +286,7 @@ mod view_manager_test {
 
         // table scan の挙動を確認
         let table_scan_factory = {
-            let mut table_scan_factory = MockTableScanFactoryImpl::new();
+            let mut table_scan_factory = MockTableScanFactory::new();
             // create_view で table_scan_factory が create を呼び出すことを確認
             table_scan_factory
                 .expect_create()

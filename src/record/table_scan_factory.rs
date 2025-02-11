@@ -12,6 +12,7 @@ use thiserror::Error;
 
 /// table scan を作成するための factory
 /// application 中に何個あっても問題ない
+#[automock]
 pub trait TableScanFactory {
     fn create(
         &self,
@@ -37,7 +38,6 @@ impl TableScanFactoryImpl {
     }
 }
 
-#[automock]
 impl TableScanFactory for TableScanFactoryImpl {
     /// table scan を作成する
     /// table が存在しない場合は新しく作成される
