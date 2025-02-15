@@ -160,7 +160,7 @@ impl<'a> StatManagerImpl<'a> {
         };
 
         while table_scan.move_next()? {
-            num_blocks = (table_scan.get_rid().block_number() + 1) as u64;
+            num_blocks = (table_scan.get_rid()?.block_number() + 1) as u64;
             num_records += 1;
             for field in table_layout.schema().fields() {
                 let constant = table_scan.get_val(&field)?;
@@ -245,7 +245,9 @@ mod stat_manager_test {
                 table_scan.expect_move_next().once().returning(|| Ok(true));
                 table_scan.expect_move_next().once().returning(|| Ok(false));
 
-                table_scan.expect_get_rid().returning(|| Rid::new(0, None));
+                table_scan
+                    .expect_get_rid()
+                    .returning(|| Ok(Rid::new(0, None)));
 
                 // 1 つめのレコード
                 table_scan

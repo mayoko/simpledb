@@ -3,7 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 use thiserror::Error;
 
 use crate::{
-    query::{read_scan::ReadScanError, update_scan::UpdateScanError},
+    query::scan::{ReadScanError, UpdateScanError},
     record::{
         schema::{FieldInfo, Schema},
         table_scan_factory::{TableScanFactory, TableScanFactoryError},
@@ -56,6 +56,9 @@ pub(crate) enum ViewManagerError {
     TableScanFactory(#[from] TableScanFactoryError),
     #[error("invalid call error: {0}")]
     InvalidCall(String),
+    // TODO: 治す
+    #[error("anyhow error: {0}")]
+    Anyhow(#[from] anyhow::Error),
 }
 
 impl<'a> ViewManagerImpl<'a> {

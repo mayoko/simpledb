@@ -9,7 +9,7 @@ use crate::{
         FCAT_TYPE_FIELD, FLDCAT_TABLE_NAME, MAX_TABLE_NAME_LENGTH, TBLCAT_SLOTSIZE_FIELD,
         TBLCAT_TABLE_NAME,
     },
-    query::{read_scan::ReadScanError, update_scan::UpdateScanError},
+    query::{scan::ReadScanError, scan::UpdateScanError},
     record::{
         layout::{Layout, LayoutError},
         schema::{FieldInfo, FieldType, Schema},
@@ -65,6 +65,9 @@ pub(crate) enum TableManagerError {
     InvalidCall(String),
     #[error("internal error: {0}")]
     Internal(String),
+    // TODO: 治す
+    #[error("anyhow error: {0}")]
+    Anyhow(#[from] anyhow::Error),
 }
 
 impl TableManager for TableManagerImpl {

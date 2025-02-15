@@ -2,8 +2,7 @@ use crate::{
     file::blockid::BlockId,
     query::{
         constant::Constant,
-        read_scan::{self, ReadScan, ReadScanError},
-        update_scan::{self, UpdateScan, UpdateScanError},
+        scan::{ReadScan, ReadScanError, UpdateScan, UpdateScanError},
     },
     tx::{
         buffer_list::BufferListError,
@@ -18,6 +17,7 @@ use super::{
     schema::FieldInfo,
 };
 
+use anyhow::{anyhow, Result as AnyhowResult};
 use mockall::mock;
 use thiserror::Error;
 
@@ -44,8 +44,6 @@ pub struct TableScanImpl {
 
 #[derive(Error, Debug)]
 pub(crate) enum TableScanError {
-    #[error("invalid call error: {0}")]
-    InvalidCall(String),
     #[error("buffer list error: {0}")]
     BufferList(#[from] BufferListError),
     #[error("transaction size error: {0}")]
@@ -54,44 +52,19 @@ pub(crate) enum TableScanError {
     RecordPage(#[from] RecordPageError),
 }
 
-impl From<TableScanError> for ReadScanError {
-    fn from(err: TableScanError) -> Self {
-        match &err {
-            TableScanError::InvalidCall(_err) => {
-                ReadScanError::new(read_scan::ErrorKind::InvalidCall, Box::new(err))
-            }
-            _ => ReadScanError::new(read_scan::ErrorKind::Internal, Box::new(err)),
-        }
-    }
-}
-
-impl From<TableScanError> for UpdateScanError {
-    fn from(err: TableScanError) -> Self {
-        match &err {
-            TableScanError::InvalidCall(_err) => {
-                UpdateScanError::new(update_scan::ErrorKind::InvalidCall, Box::new(err))
-            }
-            _ => UpdateScanError::new(update_scan::ErrorKind::Internal, Box::new(err)),
-        }
-    }
-}
-
 impl TableScan for TableScanImpl {}
 
 impl ReadScan for TableScanImpl {
     /// table scan の cursor を先頭に移動する
-    fn before_first(&mut self) -> Result<(), ReadScanError> {
+    fn before_first(&mut self) -> AnyhowResult<()> {
         let block = BlockId::new(&self.filename, 0);
         self.move_to_block(&block);
         Ok(())
     }
 
     /// record の存在する、次の slot に移動する。record が存在しない場合は false を返す
-    fn move_next(&mut self) -> Result<bool, ReadScanError> {
-        self.current_slot = self
-            .record_page
-            .next_after(self.current_slot)
-            .map_err(TableScanError::from)?;
+    fn move_next(&mut self) -> AnyhowResult<bool> {
+        self.current_slot = self.record_page.next_after(self.current_slot)?;
         while self.current_slot.is_none() {
             if self.is_at_last_block()? {
                 return Ok(false);
@@ -99,61 +72,34 @@ impl ReadScan for TableScanImpl {
             let next_block_num = self.record_page.block().number() + 1;
             let block = BlockId::new(&self.filename, next_block_num);
             self.move_to_block(&block);
-            self.current_slot = self
-                .record_page
-                .next_after(None)
-                .map_err(TableScanError::from)?;
+            self.current_slot = self.record_page.next_after(None)?;
         }
         Ok(true)
     }
 
     // 今いる slot に対して、指定した field の値を取得する
-    fn get_val(&self, field_name: &str) -> Result<Constant, ReadScanError> {
+    fn get_val(&self, field_name: &str) -> AnyhowResult<Constant> {
         let slot = match self.current_slot {
             None => {
-                return Err(ReadScanError::from(TableScanError::InvalidCall(
-                    "no record is specified. you need to call before_first (and optionally move_next) first".to_string(),
+                return Err(anyhow!(ReadScanError::InvalidCall(
+                    "no record is specified for the table scan. you need to call before_first (and optionally move_next) first".to_string(),
                 )))
             }
             Some(slot) => slot,
         };
         match self.layout.schema().info(field_name) {
-            None => Err(ReadScanError::from(TableScanError::InvalidCall(
-                "field not found".to_string(),
+            None => Err(anyhow!(ReadScanError::InvalidCall(
+                "field not found for the table scan".to_string(),
             ))),
             Some(FieldInfo::Integer) => {
-                let val = self
-                    .record_page
-                    .get_int(slot, field_name)
-                    .map_err(TableScanError::from)?;
+                let val = self.record_page.get_int(slot, field_name)?;
                 Ok(Constant::Int(val))
             }
             Some(FieldInfo::String(_)) => {
-                let val = self
-                    .record_page
-                    .get_string(slot, field_name)
-                    .map_err(TableScanError::from)?;
+                let val = self.record_page.get_string(slot, field_name)?;
                 Ok(Constant::String(val))
             }
         }
-    }
-
-    fn get_int(&self, field_name: &str) -> Result<i32, ReadScanError> {
-        Ok(match self.get_val(field_name)? {
-            Constant::Int(val) => Ok(val),
-            _ => Err(TableScanError::InvalidCall(
-                "field type mismatch".to_string(),
-            )),
-        }?)
-    }
-
-    fn get_string(&self, field_name: &str) -> Result<String, ReadScanError> {
-        Ok(match self.get_val(field_name)? {
-            Constant::String(val) => Ok(val),
-            _ => Err(TableScanError::InvalidCall(
-                "field type mismatch".to_string(),
-            )),
-        }?)
     }
 
     fn has_field(&self, field_name: &str) -> bool {
@@ -162,56 +108,46 @@ impl ReadScan for TableScanImpl {
 }
 
 impl UpdateScan for TableScanImpl {
-    fn set_val(&self, field_name: &str, val: &Constant) -> Result<(), UpdateScanError> {
+    fn set_val(&self, field_name: &str, val: &Constant) -> AnyhowResult<()> {
         let slot = match self.current_slot {
-            None => Err(TableScanError::InvalidCall(
-                "no record is specified. you need to call before_first/insert first".to_string(),
+            None => Err(UpdateScanError::InvalidCall(
+                "no record is specified for the table scan. you need to call before_first/insert first".to_string(),
             )),
             Some(slot) => Ok(slot),
         }?;
         Ok(match self.layout.schema().info(field_name) {
-            None => Err(TableScanError::InvalidCall("field not found".to_string())),
+            None => Err(UpdateScanError::InvalidCall(format!(
+                "field {} not found for the table scan",
+                field_name
+            ))),
             Some(FieldInfo::Integer) => {
                 let val = match val {
                     Constant::Int(val) => Ok(*val),
-                    _ => Err(TableScanError::InvalidCall(
-                        "field type mismatch".to_string(),
-                    )),
+                    _ => Err(UpdateScanError::InvalidCall(format!(
+                        "field type mismatch (expected int): {}.",
+                        field_name
+                    ))),
                 }?;
-                self.record_page
-                    .set_int(slot, field_name, val)
-                    .map_err(TableScanError::from)?;
+                self.record_page.set_int(slot, field_name, val)?;
                 Ok(())
             }
             Some(FieldInfo::String(_)) => {
                 let val = match val {
                     Constant::String(val) => Ok(val),
-                    _ => Err(TableScanError::InvalidCall(
-                        "field type mismatch".to_string(),
-                    )),
+                    _ => Err(UpdateScanError::InvalidCall(format!(
+                        "field type mismatch (expected string): {}.",
+                        field_name
+                    ))),
                 }?;
-                self.record_page
-                    .set_string(slot, field_name, val)
-                    .map_err(TableScanError::from)?;
+                self.record_page.set_string(slot, field_name, val)?;
                 Ok(())
             }
         }?)
     }
 
-    fn set_int(&self, field_name: &str, val: i32) -> Result<(), UpdateScanError> {
-        self.set_val(field_name, &Constant::Int(val))
-    }
-
-    fn set_string(&self, field_name: &str, val: &str) -> Result<(), UpdateScanError> {
-        self.set_val(field_name, &Constant::String(val.to_string()))
-    }
-
     // 新しい record を挿入するために、現在の slot 位置から移動を行う
-    fn insert(&mut self) -> Result<(), UpdateScanError> {
-        self.current_slot = self
-            .record_page
-            .insert_after(self.current_slot)
-            .map_err(TableScanError::from)?;
+    fn insert(&mut self) -> AnyhowResult<()> {
+        self.current_slot = self.record_page.insert_after(self.current_slot)?;
         while self.current_slot.is_none() {
             if self.is_at_last_block()? {
                 self.move_to_new_block()?;
@@ -220,35 +156,36 @@ impl UpdateScan for TableScanImpl {
                 let block = BlockId::new(&self.filename, next_block_num);
                 self.move_to_block(&block);
             }
-            self.current_slot = self
-                .record_page
-                .insert_after(None)
-                .map_err(TableScanError::from)?;
+            self.current_slot = self.record_page.insert_after(None)?;
         }
         Ok(())
     }
 
     // 現在 cursor が指している record を削除する
-    fn delete(&mut self) -> Result<(), UpdateScanError> {
+    fn delete(&mut self) -> AnyhowResult<()> {
         Ok(match self.current_slot {
-            None => Err(TableScanError::InvalidCall(
-                "no record is specified. you need to call before_first (and optionally move_next) first".to_string(),
+            None => Err(UpdateScanError::InvalidCall(
+                "no record is specified for the table scan. you need to call before_first (and optionally move_next) first".to_string(),
             )),
             Some(slot) => {
-                self.record_page.delete(slot).map_err(TableScanError::from)?;
+                self.record_page.delete(slot)?;
                 Ok(())
             }
         }?)
     }
 
-    fn move_to_rid(&mut self, rid: &Rid) {
+    fn move_to_rid(&mut self, rid: &Rid) -> AnyhowResult<()> {
         let block = BlockId::new(&self.filename, rid.block_number());
         self.record_page = RecordPage::new(self.tx.clone(), &block, &self.layout);
         self.current_slot = rid.slot();
+        Ok(())
     }
 
-    fn get_rid(&self) -> Rid {
-        Rid::new(self.record_page.block().number(), self.current_slot)
+    fn get_rid(&self) -> AnyhowResult<Rid> {
+        Ok(Rid::new(
+            self.record_page.block().number(),
+            self.current_slot,
+        ))
     }
 }
 
@@ -258,7 +195,7 @@ impl TableScanImpl {
         self.current_slot = None;
     }
 
-    fn move_to_new_block(&mut self) -> Result<(), TableScanError> {
+    fn move_to_new_block(&mut self) -> AnyhowResult<(), TableScanError> {
         let block = self.tx.borrow_mut().append(&self.filename)?;
         self.move_to_block(&block);
         self.record_page.format()?;
@@ -266,30 +203,48 @@ impl TableScanImpl {
     }
 
     // table を走査していき、すでに最後の block まで到達していれば true を返す
-    fn is_at_last_block(&self) -> Result<bool, TableScanError> {
+    fn is_at_last_block(&self) -> AnyhowResult<bool, TableScanError> {
         let block_num = self.record_page.block().number();
         Ok(block_num == self.tx.borrow_mut().size(&self.filename)? - 1)
+    }
+}
+
+impl ReadScan for Box<TableScanImpl> {
+    fn before_first(&mut self) -> AnyhowResult<()> {
+        self.as_mut().before_first()
+    }
+
+    fn move_next(&mut self) -> AnyhowResult<bool> {
+        self.as_mut().move_next()
+    }
+
+    fn get_val(&self, field_name: &str) -> AnyhowResult<Constant> {
+        self.as_ref().get_val(field_name)
+    }
+
+    fn has_field(&self, field_name: &str) -> bool {
+        self.as_ref().has_field(field_name)
     }
 }
 
 mock! {
     pub TableScan {}
     impl ReadScan for TableScan {
-        fn before_first(&mut self) -> Result<(), ReadScanError>;
-        fn move_next(&mut self) -> Result<bool, ReadScanError>;
-        fn get_val(&self, field_name: &str) -> Result<Constant, ReadScanError>;
-        fn get_int(&self, field_name: &str) -> Result<i32, ReadScanError>;
-        fn get_string(&self, field_name: &str) -> Result<String, ReadScanError>;
+        fn before_first(&mut self) -> AnyhowResult<()>;
+        fn move_next(&mut self) -> AnyhowResult<bool>;
+        fn get_val(&self, field_name: &str) -> AnyhowResult<Constant>;
+        fn get_int(&self, field_name: &str) -> AnyhowResult<i32>;
+        fn get_string(&self, field_name: &str) -> AnyhowResult<String>;
         fn has_field(&self, field_name: &str) -> bool;
     }
     impl UpdateScan for TableScan {
-        fn set_val(&self, field_name: &str, val: &Constant) -> Result<(), UpdateScanError>;
-        fn set_int(&self, field_name: &str, val: i32) -> Result<(), UpdateScanError>;
-        fn set_string(&self, field_name: &str, val: &str) -> Result<(), UpdateScanError>;
-        fn insert(&mut self) -> Result<(), UpdateScanError>;
-        fn delete(&mut self) -> Result<(), UpdateScanError>;
-        fn move_to_rid(&mut self, rid: &Rid);
-        fn get_rid(&self) -> Rid;
+        fn set_val(&self, field_name: &str, val: &Constant) -> AnyhowResult<()>;
+        fn set_int(&self, field_name: &str, val: i32) -> AnyhowResult<()>;
+        fn set_string(&self, field_name: &str, val: &str) -> AnyhowResult<()>;
+        fn insert(&mut self) -> AnyhowResult<()>;
+        fn delete(&mut self) -> AnyhowResult<()>;
+        fn move_to_rid(&mut self, rid: &Rid) -> AnyhowResult<()>;
+        fn get_rid(&self) -> AnyhowResult<Rid>;
     }
     impl TableScan for TableScan {}
 }
