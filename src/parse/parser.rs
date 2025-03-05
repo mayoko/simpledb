@@ -7,7 +7,7 @@ use crate::query::{
 
 use super::{
     constant::KEYWORDS,
-    content::{insert_data::InsertData, query_data::QueryData},
+    content::{delete_data::DeleteData, insert_data::InsertData, query_data::QueryData},
     lexer::{Lexer, Token},
 };
 use anyhow::{anyhow, Result as AnyhowResult};
@@ -33,6 +33,8 @@ pub trait Parser {
     fn parse_query(&mut self) -> AnyhowResult<QueryData>;
     /// insert 文の取得
     fn parse_insert(&mut self) -> AnyhowResult<InsertData>;
+    /// delete 文の取得
+    fn parse_delete(&mut self) -> AnyhowResult<DeleteData>;
 }
 
 #[derive(Error, Debug)]
@@ -122,6 +124,18 @@ impl Parser for ParserImpl {
         self.lexer.eat_exact(Token::Delimiter(')'))?;
         Ok(InsertData::new(table_name, fields, values))
     }
+    fn parse_delete(&mut self) -> AnyhowResult<DeleteData> {
+        self.lexer.eat_exact(Token::Keyword("delete".to_string()))?;
+        self.lexer.eat_exact(Token::Keyword("from".to_string()))?;
+        let table_name = self.lexer.eat_id()?;
+        if self.lexer.is_matched(Token::Keyword("where".to_string())) {
+            self.lexer.eat_exact(Token::Keyword("where".to_string()))?;
+            let predicate = self.parse_predicate()?;
+            Ok(DeleteData::new(table_name, predicate))
+        } else {
+            Ok(DeleteData::new(table_name, ProductPredicate::new(vec![])))
+        }
+    }
 }
 
 impl ParserImpl {
@@ -177,5 +191,23 @@ mod parser_test {
             insert_data.get_values(),
             &vec![Constant::Int(3), Constant::String("string".to_string())]
         );
+    }
+    #[test]
+    fn test_delete_sentence_with_where_phrase() {
+        let query = "delete from x where a = 3 and b = 'string'";
+        let mut parser = ParserImpl::new(query.to_string()).unwrap();
+        let delete_data = parser.parse_delete().unwrap();
+        assert_eq!(delete_data.get_table(), "x");
+        let predicate = delete_data.get_predicate();
+        assert_eq!(predicate.to_string(), "a = 3 and b = 'string'");
+    }
+    #[test]
+    fn test_delete_sentence_without_where_phrase() {
+        let query = "delete from x";
+        let mut parser = ParserImpl::new(query.to_string()).unwrap();
+        let delete_data = parser.parse_delete().unwrap();
+        assert_eq!(delete_data.get_table(), "x");
+        let predicate = delete_data.get_predicate();
+        assert_eq!(predicate.to_string(), "");
     }
 }
