@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::record::schema::Schema;
 
 use super::{constant::Constant, scan::Scan};
@@ -47,6 +49,15 @@ impl Expression {
         match self {
             Expression::Constant(_) => true,
             Expression::Field(field_name) => schema.has_field(field_name),
+        }
+    }
+}
+
+impl fmt::Display for Expression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Expression::Constant(constant) => write!(f, "{}", constant),
+            Expression::Field(field_name) => write!(f, "{}", field_name),
         }
     }
 }

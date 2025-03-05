@@ -1,3 +1,5 @@
+use std::fmt;
+
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Hash)]
 pub enum Constant {
     Int(i32),
@@ -16,6 +18,15 @@ impl Constant {
         match self {
             Constant::String(val) => Some(val),
             _ => None,
+        }
+    }
+}
+
+impl fmt::Display for Constant {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Constant::Int(val) => write!(f, "{}", val),
+            Constant::String(val) => write!(f, "'{}'", val),
         }
     }
 }

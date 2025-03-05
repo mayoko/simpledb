@@ -57,8 +57,14 @@ impl Lexer {
         self.token == token
     }
     /**
+     * 現在の token を返す
+     */
+    pub fn get_token(&self) -> &Token {
+        &self.token
+    }
+    /**
      * token に match したら、match した分だけ読み進める
-     * そうでないばあいは error を返す
+     * そうでない場合は error を返す
      */
     pub fn eat_exact(&mut self, token: Token) -> AnyhowResult<()> {
         if self.token == token {

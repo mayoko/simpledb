@@ -1,3 +1,4 @@
+use std::fmt;
 use std::ops::Mul;
 
 use crate::record::schema::Schema;
@@ -10,7 +11,7 @@ use dyn_clone::DynClone;
 /**
  * Select の where 句で用いられる条件のうちの一つを表す (A=B, A<B など)
  */
-pub trait Term: std::fmt::Debug + DynClone {
+pub trait Term: std::fmt::Display + std::fmt::Debug + DynClone {
     /// この term が満たされるかどうかを判定する
     fn is_satisfied(&self, scan: &Scan) -> AnyhowResult<bool>;
     /// この term が schema に適用可能かどうかを判定する
@@ -51,6 +52,12 @@ impl Mul for ReductionFactor {
 pub struct EqualTerm {
     lhs: Expression,
     rhs: Expression,
+}
+
+impl fmt::Display for EqualTerm {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} = {}", self.lhs, self.rhs)
+    }
 }
 
 impl Term for EqualTerm {
