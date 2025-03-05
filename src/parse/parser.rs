@@ -7,7 +7,7 @@ use crate::query::{
 
 use super::{
     constant::KEYWORDS,
-    content::query_data::QueryData,
+    content::{insert_data::InsertData, query_data::QueryData},
     lexer::{Lexer, Token},
 };
 use anyhow::{anyhow, Result as AnyhowResult};
@@ -31,6 +31,8 @@ pub trait Parser {
     fn parse_predicate(&mut self) -> AnyhowResult<ProductPredicate>;
     /// select 文の取得
     fn parse_query(&mut self) -> AnyhowResult<QueryData>;
+    /// insert 文の取得
+    fn parse_insert(&mut self) -> AnyhowResult<InsertData>;
 }
 
 #[derive(Error, Debug)]
@@ -107,6 +109,19 @@ impl Parser for ParserImpl {
             ))
         }
     }
+    fn parse_insert(&mut self) -> AnyhowResult<InsertData> {
+        self.lexer.eat_exact(Token::Keyword("insert".to_string()))?;
+        self.lexer.eat_exact(Token::Keyword("into".to_string()))?;
+        let table_name = self.lexer.eat_id()?;
+        self.lexer.eat_exact(Token::Delimiter('('))?;
+        let fields = self.parse_id_list()?;
+        self.lexer.eat_exact(Token::Delimiter(')'))?;
+        self.lexer.eat_exact(Token::Keyword("values".to_string()))?;
+        self.lexer.eat_exact(Token::Delimiter('('))?;
+        let values = self.parse_constant_list()?;
+        self.lexer.eat_exact(Token::Delimiter(')'))?;
+        Ok(InsertData::new(table_name, fields, values))
+    }
 }
 
 impl ParserImpl {
@@ -121,6 +136,14 @@ impl ParserImpl {
             fields.push(self.lexer.eat_id()?);
         }
         Ok(fields)
+    }
+    fn parse_constant_list(&mut self) -> AnyhowResult<Vec<Constant>> {
+        let mut values = vec![self.parse_constant()?];
+        while self.lexer.is_matched(Token::Delimiter(',')) {
+            self.lexer.eat_exact(Token::Delimiter(','))?;
+            values.push(self.parse_constant()?);
+        }
+        Ok(values)
     }
 }
 
@@ -139,5 +162,20 @@ mod parser_test {
         );
         let predicate = query_data.get_predicate();
         assert_eq!(predicate.to_string(), "b = 3 and c = 'string'");
+    }
+    #[test]
+    fn test_insert_sentence() {
+        let query = "insert into x (a, b) values (3, 'string')";
+        let mut parser = ParserImpl::new(query.to_string()).unwrap();
+        let insert_data = parser.parse_insert().unwrap();
+        assert_eq!(insert_data.get_table(), "x");
+        assert_eq!(
+            insert_data.get_fields(),
+            &vec!["a".to_string(), "b".to_string()]
+        );
+        assert_eq!(
+            insert_data.get_values(),
+            &vec![Constant::Int(3), Constant::String("string".to_string())]
+        );
     }
 }
