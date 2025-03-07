@@ -1,3 +1,4 @@
+pub mod create_index_data;
 pub mod create_table_data;
 pub mod create_view_data;
 pub mod delete_data;

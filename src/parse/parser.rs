@@ -11,9 +11,9 @@ use crate::{
 use super::{
     constant::KEYWORDS,
     content::{
-        create_table_data::CreateTableData, create_view_data::CreateViewData,
-        delete_data::DeleteData, insert_data::InsertData, query_data::QueryData,
-        update_data::UpdateData,
+        create_index_data::CreateIndexData, create_table_data::CreateTableData,
+        create_view_data::CreateViewData, delete_data::DeleteData, insert_data::InsertData,
+        query_data::QueryData, update_data::UpdateData,
     },
     lexer::{Lexer, Token},
 };
@@ -48,6 +48,9 @@ pub trait Parser {
     fn parse_create_table(&mut self) -> AnyhowResult<CreateTableData>;
     /// create view 文の取得
     fn parse_create_view(&mut self) -> AnyhowResult<CreateViewData>;
+    /// create index 文の取得
+    /// field としては一つしか許容していないことに注意
+    fn parse_create_index(&mut self) -> AnyhowResult<CreateIndexData>;
 }
 
 #[derive(Error, Debug)]
@@ -180,6 +183,17 @@ impl Parser for ParserImpl {
         self.lexer.eat_exact(Token::Keyword("as".to_string()))?;
         let query = self.parse_query()?;
         Ok(CreateViewData::new(view_name, query))
+    }
+    fn parse_create_index(&mut self) -> AnyhowResult<CreateIndexData> {
+        self.lexer.eat_exact(Token::Keyword("create".to_string()))?;
+        self.lexer.eat_exact(Token::Keyword("index".to_string()))?;
+        let index_name = self.lexer.eat_id()?;
+        self.lexer.eat_exact(Token::Keyword("on".to_string()))?;
+        let table_name = self.lexer.eat_id()?;
+        self.lexer.eat_exact(Token::Delimiter('('))?;
+        let field_name = self.lexer.eat_id()?;
+        self.lexer.eat_exact(Token::Delimiter(')'))?;
+        Ok(CreateIndexData::new(index_name, table_name, field_name))
     }
 }
 
@@ -333,5 +347,14 @@ mod parser_test {
         assert_eq!(query_data.get_tables(), &vec!["y".to_string()]);
         let predicate = query_data.get_predicate();
         assert_eq!(predicate.to_string(), "b = 3");
+    }
+    #[test]
+    fn test_create_index() {
+        let query = "create index x on y (a)";
+        let mut parser = ParserImpl::new(query.to_string()).unwrap();
+        let create_index_data = parser.parse_create_index().unwrap();
+        assert_eq!(create_index_data.index_name(), "x");
+        assert_eq!(create_index_data.table_name(), "y");
+        assert_eq!(create_index_data.field_name(), "a");
     }
 }
