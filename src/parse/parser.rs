@@ -11,8 +11,9 @@ use crate::{
 use super::{
     constant::KEYWORDS,
     content::{
-        create_table_data::CreateTableData, delete_data::DeleteData, insert_data::InsertData,
-        query_data::QueryData, update_data::UpdateData,
+        create_table_data::CreateTableData, create_view_data::CreateViewData,
+        delete_data::DeleteData, insert_data::InsertData, query_data::QueryData,
+        update_data::UpdateData,
     },
     lexer::{Lexer, Token},
 };
@@ -45,6 +46,8 @@ pub trait Parser {
     fn parse_update(&mut self) -> AnyhowResult<UpdateData>;
     /// create table 文の取得
     fn parse_create_table(&mut self) -> AnyhowResult<CreateTableData>;
+    /// create view 文の取得
+    fn parse_create_view(&mut self) -> AnyhowResult<CreateViewData>;
 }
 
 #[derive(Error, Debug)]
@@ -169,6 +172,14 @@ impl Parser for ParserImpl {
         let schema = self.parse_field_definitions()?;
         self.lexer.eat_exact(Token::Delimiter(')'))?;
         Ok(CreateTableData::new(table, schema))
+    }
+    fn parse_create_view(&mut self) -> AnyhowResult<CreateViewData> {
+        self.lexer.eat_exact(Token::Keyword("create".to_string()))?;
+        self.lexer.eat_exact(Token::Keyword("view".to_string()))?;
+        let view_name = self.lexer.eat_id()?;
+        self.lexer.eat_exact(Token::Keyword("as".to_string()))?;
+        let query = self.parse_query()?;
+        Ok(CreateViewData::new(view_name, query))
     }
 }
 
@@ -310,5 +321,17 @@ mod parser_test {
         let schema = create_table_data.get_schema();
         assert_eq!(schema.info("a"), Some(FieldInfo::Integer));
         assert_eq!(schema.info("b"), Some(FieldInfo::String(10)));
+    }
+    #[test]
+    fn test_create_view() {
+        let query = "create view x as select a from y where b = 3";
+        let mut parser = ParserImpl::new(query.to_string()).unwrap();
+        let create_view_data = parser.parse_create_view().unwrap();
+        assert_eq!(create_view_data.view_name(), "x");
+        let query_data = create_view_data.view_def();
+        assert_eq!(query_data.get_fields(), &vec!["a".to_string()]);
+        assert_eq!(query_data.get_tables(), &vec!["y".to_string()]);
+        let predicate = query_data.get_predicate();
+        assert_eq!(predicate.to_string(), "b = 3");
     }
 }
