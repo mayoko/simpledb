@@ -1,5 +1,9 @@
 use crate::query::constant::Constant;
 
+/**
+ * insert 文の parse 結果を保持する構造体
+ * この時点では fields と values の対応関係は気にしていない。特に、fields と values の数が異なる場合にもエラーとしていない。
+ */
 pub struct InsertData {
     table: String,
     fields: Vec<String>,

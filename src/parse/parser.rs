@@ -7,7 +7,10 @@ use crate::query::{
 
 use super::{
     constant::KEYWORDS,
-    content::{delete_data::DeleteData, insert_data::InsertData, query_data::QueryData},
+    content::{
+        delete_data::DeleteData, insert_data::InsertData, query_data::QueryData,
+        update_data::UpdateData,
+    },
     lexer::{Lexer, Token},
 };
 use anyhow::{anyhow, Result as AnyhowResult};
@@ -35,6 +38,8 @@ pub trait Parser {
     fn parse_insert(&mut self) -> AnyhowResult<InsertData>;
     /// delete 文の取得
     fn parse_delete(&mut self) -> AnyhowResult<DeleteData>;
+    /// update 文の取得
+    fn parse_update(&mut self) -> AnyhowResult<UpdateData>;
 }
 
 #[derive(Error, Debug)]
@@ -136,6 +141,21 @@ impl Parser for ParserImpl {
             Ok(DeleteData::new(table_name, ProductPredicate::new(vec![])))
         }
     }
+    fn parse_update(&mut self) -> AnyhowResult<UpdateData> {
+        self.lexer.eat_exact(Token::Keyword("update".to_string()))?;
+        let table_name = self.lexer.eat_id()?;
+        self.lexer.eat_exact(Token::Keyword("set".to_string()))?;
+        let field = self.lexer.eat_id()?;
+        self.lexer.eat_exact(Token::Delimiter('='))?;
+        let value = self.parse_expression()?;
+        let predicate = if self.lexer.is_matched(Token::Keyword("where".to_string())) {
+            self.lexer.eat_exact(Token::Keyword("where".to_string()))?;
+            self.parse_predicate()?
+        } else {
+            ProductPredicate::new(vec![])
+        };
+        Ok(UpdateData::new(table_name, field, value, predicate))
+    }
 }
 
 impl ParserImpl {
@@ -208,6 +228,34 @@ mod parser_test {
         let delete_data = parser.parse_delete().unwrap();
         assert_eq!(delete_data.get_table(), "x");
         let predicate = delete_data.get_predicate();
+        assert_eq!(predicate.to_string(), "");
+    }
+    #[test]
+    fn test_update_sentence_with_setting_constant_and_where_phrase() {
+        let query = "update x set a = 3 where b = 'string'";
+        let mut parser = ParserImpl::new(query.to_string()).unwrap();
+        let update_data = parser.parse_update().unwrap();
+        assert_eq!(update_data.get_table(), "x");
+        assert_eq!(update_data.get_field(), "a");
+        assert_eq!(
+            update_data.get_new_value(),
+            &Expression::Constant(Constant::Int(3))
+        );
+        let predicate = update_data.get_predicate();
+        assert_eq!(predicate.to_string(), "b = 'string'");
+    }
+    #[test]
+    fn test_update_sentence_with_setting_field() {
+        let query = "update x set a = c";
+        let mut parser = ParserImpl::new(query.to_string()).unwrap();
+        let update_data = parser.parse_update().unwrap();
+        assert_eq!(update_data.get_table(), "x");
+        assert_eq!(update_data.get_field(), "a");
+        assert_eq!(
+            update_data.get_new_value(),
+            &Expression::Field('c'.to_string())
+        );
+        let predicate = update_data.get_predicate();
         assert_eq!(predicate.to_string(), "");
     }
 }
