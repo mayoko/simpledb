@@ -12,7 +12,7 @@ pub struct Schema {
 }
 
 #[derive(Error, Debug)]
-pub(crate) enum SchemaError {
+pub enum SchemaError {
     #[error("invalid call error: {0}")]
     InvalidCallError(String),
 }

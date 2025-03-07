@@ -1,15 +1,18 @@
-use crate::query::{
-    constant::Constant,
-    expression::Expression,
-    predicate::ProductPredicate,
-    term::{EqualTerm, Term},
+use crate::{
+    query::{
+        constant::Constant,
+        expression::Expression,
+        predicate::ProductPredicate,
+        term::{EqualTerm, Term},
+    },
+    record::schema::{FieldInfo, Schema},
 };
 
 use super::{
     constant::KEYWORDS,
     content::{
-        delete_data::DeleteData, insert_data::InsertData, query_data::QueryData,
-        update_data::UpdateData,
+        create_table_data::CreateTableData, delete_data::DeleteData, insert_data::InsertData,
+        query_data::QueryData, update_data::UpdateData,
     },
     lexer::{Lexer, Token},
 };
@@ -40,6 +43,8 @@ pub trait Parser {
     fn parse_delete(&mut self) -> AnyhowResult<DeleteData>;
     /// update 文の取得
     fn parse_update(&mut self) -> AnyhowResult<UpdateData>;
+    /// create table 文の取得
+    fn parse_create_table(&mut self) -> AnyhowResult<CreateTableData>;
 }
 
 #[derive(Error, Debug)]
@@ -156,6 +161,15 @@ impl Parser for ParserImpl {
         };
         Ok(UpdateData::new(table_name, field, value, predicate))
     }
+    fn parse_create_table(&mut self) -> AnyhowResult<CreateTableData> {
+        self.lexer.eat_exact(Token::Keyword("create".to_string()))?;
+        self.lexer.eat_exact(Token::Keyword("table".to_string()))?;
+        let table = self.lexer.eat_id()?;
+        self.lexer.eat_exact(Token::Delimiter('('))?;
+        let schema = self.parse_field_definitions()?;
+        self.lexer.eat_exact(Token::Delimiter(')'))?;
+        Ok(CreateTableData::new(table, schema))
+    }
 }
 
 impl ParserImpl {
@@ -178,6 +192,35 @@ impl ParserImpl {
             values.push(self.parse_constant()?);
         }
         Ok(values)
+    }
+    fn parse_field_definition(&mut self) -> AnyhowResult<Schema> {
+        let field_name = self.lexer.eat_id()?;
+        let mut schema = Schema::new();
+        if self.lexer.is_matched(Token::Keyword("int".to_string())) {
+            self.lexer.eat_exact(Token::Keyword("int".to_string()))?;
+            schema.add_field(&field_name, FieldInfo::Integer);
+            Ok(schema)
+        } else if self.lexer.is_matched(Token::Keyword("varchar".to_string())) {
+            self.lexer
+                .eat_exact(Token::Keyword("varchar".to_string()))?;
+            self.lexer.eat_exact(Token::Delimiter('('))?;
+            let strlen = self.lexer.eat_int_constant()?;
+            self.lexer.eat_exact(Token::Delimiter(')'))?;
+            schema.add_field(&field_name, FieldInfo::String(strlen as usize));
+            Ok(schema)
+        } else {
+            Err(anyhow!(ParserError::UnexpectedToken(
+                "expected field type (int, string)".to_string()
+            )))
+        }
+    }
+    fn parse_field_definitions(&mut self) -> AnyhowResult<Schema> {
+        let mut schema = self.parse_field_definition()?;
+        if self.lexer.is_matched(Token::Delimiter(',')) {
+            self.lexer.eat_exact(Token::Delimiter(','))?;
+            schema.add_all(&self.parse_field_definitions()?)?;
+        }
+        Ok(schema)
     }
 }
 
@@ -257,5 +300,15 @@ mod parser_test {
         );
         let predicate = update_data.get_predicate();
         assert_eq!(predicate.to_string(), "");
+    }
+    #[test]
+    fn test_create_table() {
+        let query = "create table x (a int, b varchar(10))";
+        let mut parser = ParserImpl::new(query.to_string()).unwrap();
+        let create_table_data = parser.parse_create_table().unwrap();
+        assert_eq!(create_table_data.get_table(), "x");
+        let schema = create_table_data.get_schema();
+        assert_eq!(schema.info("a"), Some(FieldInfo::Integer));
+        assert_eq!(schema.info("b"), Some(FieldInfo::String(10)));
     }
 }
