@@ -34,6 +34,8 @@ pub trait TableScan: ReadScan + UpdateScan {}
  */
 pub struct TableScanImpl {
     // TableScanFactory に見せるために pub(crate) にしている
+    // RecordPage にわたす分と自分で管理する分の transaction を同時に保持するため、Rc で wrap している
+    // record_page とこのクラスで同時に transaction にアクセスすることはないはずなので、RefCell をしても panic は起きないはず
     pub(crate) tx: Rc<RefCell<Transaction>>,
     pub(crate) layout: Layout,
     // 現在の record が格納されている RecordPage
@@ -191,7 +193,7 @@ impl UpdateScan for TableScanImpl {
 
 impl TableScanImpl {
     fn move_to_block(&mut self, block: &BlockId) {
-        self.record_page = RecordPage::new(self.tx.clone(), &block, &self.layout);
+        self.record_page = RecordPage::new(self.tx.clone(), block, &self.layout);
         self.current_slot = None;
     }
 
@@ -298,9 +300,7 @@ mod table_scan_test {
         {
             let layout = setup_layout();
             let table_scan_factory = TableScanFactoryImpl::new();
-            let mut table_scan = table_scan_factory
-                .create(tx.clone(), "testtbl", &layout)
-                .unwrap();
+            let mut table_scan = table_scan_factory.create(&tx, "testtbl", &layout).unwrap();
 
             // 50 個の record を insert する
             table_scan.before_first().unwrap();

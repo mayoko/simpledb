@@ -24,19 +24,19 @@ use super::constants::MAX_FIELD_NAME_LENGTH;
 pub trait TableManager {
     /// table manager が table を管理するために必要なファイルがまだ作成されていない場合、作成する
     /// このメソッドは何回呼んでも問題ない
-    fn setup_if_not_exists(&self, tx: Rc<RefCell<Transaction>>) -> Result<(), TableManagerError>;
+    fn setup_if_not_exists(&self, tx: &Rc<RefCell<Transaction>>) -> Result<(), TableManagerError>;
     // 新しい table を作成する
     // Warning: すでに table が存在する場合、エラーを返すべきだが、その確認は特にしていない
     fn create_table(
         &self,
         table_name: &str,
         schema: Schema,
-        tx: Rc<RefCell<Transaction>>,
+        tx: &Rc<RefCell<Transaction>>,
     ) -> Result<(), TableManagerError>;
     fn get_layout(
         &self,
         table_name: &str,
-        tx: Rc<RefCell<Transaction>>,
+        tx: &Rc<RefCell<Transaction>>,
     ) -> Result<Layout, TableManagerError>;
 }
 
@@ -71,21 +71,17 @@ pub(crate) enum TableManagerError {
 }
 
 impl TableManager for TableManagerImpl {
-    fn setup_if_not_exists(&self, tx: Rc<RefCell<Transaction>>) -> Result<(), TableManagerError> {
+    fn setup_if_not_exists(&self, tx: &Rc<RefCell<Transaction>>) -> Result<(), TableManagerError> {
         // tblcat テーブルに tblcat 自身の情報が書いていなければ、初期化をしていなかったと判断して初期化を行う
-        let mut tcat =
-            self.table_scan_factory
-                .create(tx.clone(), TBLCAT_TABLE_NAME, &self.tcat_layout)?;
+        let mut tcat = self
+            .table_scan_factory
+            .create(tx, TBLCAT_TABLE_NAME, &self.tcat_layout)?;
         while tcat.move_next()? {
             if tcat.get_string(TBLCAT_TABLE_NAME)? == TBLCAT_TABLE_NAME {
                 return Ok(());
             }
         }
-        self.create_table(
-            TBLCAT_TABLE_NAME,
-            self.tcat_layout.schema().clone(),
-            tx.clone(),
-        )?;
+        self.create_table(TBLCAT_TABLE_NAME, self.tcat_layout.schema().clone(), tx)?;
         self.create_table(FLDCAT_TABLE_NAME, self.fcat_layout.schema().clone(), tx)?;
         Ok(())
     }
@@ -96,14 +92,14 @@ impl TableManager for TableManagerImpl {
         &self,
         table_name: &str,
         schema: Schema,
-        tx: Rc<RefCell<Transaction>>,
+        tx: &Rc<RefCell<Transaction>>,
     ) -> Result<(), TableManagerError> {
         let layout = Layout::new(schema.clone())?;
 
         {
             let mut tcat =
                 self.table_scan_factory
-                    .create(tx.clone(), TBLCAT_TABLE_NAME, &self.tcat_layout)?;
+                    .create(tx, TBLCAT_TABLE_NAME, &self.tcat_layout)?;
             tcat.insert()?;
             tcat.set_string(TBLCAT_TABLE_NAME, table_name)?;
             tcat.set_int(TBLCAT_SLOTSIZE_FIELD, layout.slot_size() as i32)?;
@@ -112,7 +108,7 @@ impl TableManager for TableManagerImpl {
         {
             let mut fcat =
                 self.table_scan_factory
-                    .create(tx.clone(), FLDCAT_TABLE_NAME, &self.fcat_layout)?;
+                    .create(tx, FLDCAT_TABLE_NAME, &self.fcat_layout)?;
             for field in &schema.fields() {
                 fcat.insert()?;
                 fcat.set_string(FCAT_TBLNAME_FIELD, table_name)?;
@@ -154,9 +150,9 @@ impl TableManager for TableManagerImpl {
     fn get_layout(
         &self,
         table_name: &str,
-        tx: Rc<RefCell<Transaction>>,
+        tx: &Rc<RefCell<Transaction>>,
     ) -> Result<Layout, TableManagerError> {
-        let slot_size = self.get_record_size(table_name, tx.clone())?;
+        let slot_size = self.get_record_size(table_name, tx)?;
         let (schema, offsets) = self.get_schema_and_offsets(table_name, tx)?;
 
         Ok(Layout::new_from_existing_settings(
@@ -190,7 +186,7 @@ impl TableManagerImpl {
     fn get_record_size(
         &self,
         table_name: &str,
-        tx: Rc<RefCell<Transaction>>,
+        tx: &Rc<RefCell<Transaction>>,
     ) -> Result<usize, TableManagerError> {
         let mut tcat = self
             .table_scan_factory
@@ -209,7 +205,7 @@ impl TableManagerImpl {
     fn get_schema_and_offsets(
         &self,
         table_name: &str,
-        tx: Rc<RefCell<Transaction>>,
+        tx: &Rc<RefCell<Transaction>>,
     ) -> Result<(Schema, HashMap<String, usize>), TableManagerError> {
         let mut schema = Schema::new();
         let mut offsets = HashMap::new();
@@ -284,22 +280,16 @@ mod table_manager_test {
         let table_scan_factory = Box::new(TableScanFactoryImpl::new());
 
         let table_manager = TableManagerImpl::new(table_scan_factory).unwrap();
-        table_manager.setup_if_not_exists(tx.clone()).unwrap();
+        table_manager.setup_if_not_exists(&tx).unwrap();
         // table 管理用に作成した tblcat, fldcat が存在する
-        assert!(table_manager
-            .get_layout(TBLCAT_TABLE_NAME, tx.clone())
-            .is_ok());
-        assert!(table_manager
-            .get_layout(FLDCAT_TABLE_NAME, tx.clone())
-            .is_ok());
+        assert!(table_manager.get_layout(TBLCAT_TABLE_NAME, &tx).is_ok());
+        assert!(table_manager.get_layout(FLDCAT_TABLE_NAME, &tx).is_ok());
         // 他の table は存在しない
-        assert!(table_manager
-            .get_layout("not_exist_table", tx.clone())
-            .is_err());
+        assert!(table_manager.get_layout("not_exist_table", &tx).is_err());
 
         // 何回呼び出しても大丈夫
-        table_manager.setup_if_not_exists(tx.clone()).unwrap();
-        table_manager.setup_if_not_exists(tx.clone()).unwrap();
+        table_manager.setup_if_not_exists(&tx).unwrap();
+        table_manager.setup_if_not_exists(&tx).unwrap();
 
         tx.borrow_mut().commit().unwrap();
     }
@@ -312,13 +302,13 @@ mod table_manager_test {
         let table_scan_factory = Box::new(TableScanFactoryImpl::new());
 
         let table_manager = TableManagerImpl::new(table_scan_factory).unwrap();
-        table_manager.setup_if_not_exists(tx.clone()).unwrap();
+        table_manager.setup_if_not_exists(&tx).unwrap();
 
         let layout = setup_layout();
         table_manager
-            .create_table("test_table", layout.schema().clone(), tx.clone())
+            .create_table("test_table", layout.schema().clone(), &tx)
             .unwrap();
-        let layout_from_manager = table_manager.get_layout("test_table", tx.clone()).unwrap();
+        let layout_from_manager = table_manager.get_layout("test_table", &tx).unwrap();
         assert_eq!(layout, layout_from_manager);
 
         tx.borrow_mut().commit().unwrap();

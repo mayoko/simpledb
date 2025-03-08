@@ -16,7 +16,7 @@ use thiserror::Error;
 pub trait TableScanFactory {
     fn create(
         &self,
-        tx: Rc<RefCell<Transaction>>,
+        tx: &Rc<RefCell<Transaction>>,
         tblname: &str,
         layout: &Layout,
     ) -> Result<Box<dyn TableScan>, TableScanFactoryError>;
@@ -43,7 +43,7 @@ impl TableScanFactory for TableScanFactoryImpl {
     /// table が存在しない場合は新しく作成される
     fn create(
         &self,
-        tx: Rc<RefCell<Transaction>>,
+        tx: &Rc<RefCell<Transaction>>,
         tblname: &str,
         layout: &Layout,
     ) -> Result<Box<dyn TableScan>, TableScanFactoryError> {

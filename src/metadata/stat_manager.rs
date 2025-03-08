@@ -26,7 +26,7 @@ pub trait StatManager {
         &self,
         table_name: &str,
         field_name: &str,
-        tx: Rc<RefCell<Transaction>>,
+        tx: &Rc<RefCell<Transaction>>,
     ) -> AnyhowResult<StatInfo>;
 }
 
@@ -67,7 +67,7 @@ impl StatManager for StatManagerImpl<'_> {
         &self,
         table_name: &str,
         field_name: &str,
-        tx: Rc<RefCell<Transaction>>,
+        tx: &Rc<RefCell<Transaction>>,
     ) -> AnyhowResult<StatInfo> {
         {
             let mut num_calls = self
@@ -88,7 +88,7 @@ impl StatManager for StatManagerImpl<'_> {
             Some(stat_info) => Ok(*stat_info.value()),
             None => {
                 // 統計情報が見つからない場合は再計算する
-                let table_layout = self.table_manager.get_layout(table_name, tx.clone())?;
+                let table_layout = self.table_manager.get_layout(table_name, &tx)?;
                 let table_stats = self.calc_table_stats(table_name, table_layout, tx.clone())?;
                 for (field_id, stat_info) in table_stats {
                     self.field_stats.insert(field_id, stat_info);
@@ -124,15 +124,13 @@ impl<'a> StatManagerImpl<'a> {
     fn refresh_statistics(&self, tx: Rc<RefCell<Transaction>>) -> AnyhowResult<()> {
         self.field_stats.clear();
         let mut tcat_scan = {
-            let tcat_layout = self
-                .table_manager
-                .get_layout(TBLCAT_TABLE_NAME, tx.clone())?;
+            let tcat_layout = self.table_manager.get_layout(TBLCAT_TABLE_NAME, &tx)?;
             self.table_scan_factory
-                .create(tx.clone(), TBLCAT_TABLE_NAME, &tcat_layout)?
+                .create(&tx, TBLCAT_TABLE_NAME, &tcat_layout)?
         };
         while tcat_scan.move_next()? {
             let table_name = tcat_scan.get_string(TBLCAT_TBLNAME_FIELD)?;
-            let table_layout = self.table_manager.get_layout(&table_name, tx.clone())?;
+            let table_layout = self.table_manager.get_layout(&table_name, &tx)?;
             let stats_for_table = self.calc_table_stats(&table_name, table_layout, tx.clone())?;
             for (field_id, stat_info) in stats_for_table {
                 self.field_stats.insert(field_id, stat_info);
@@ -154,9 +152,9 @@ impl<'a> StatManagerImpl<'a> {
         let mut field_to_values: HashMap<FieldId, HashSet<Constant>> = HashMap::new();
 
         let mut table_scan = {
-            let table_layout = self.table_manager.get_layout(table_name, tx.clone())?;
+            let table_layout = self.table_manager.get_layout(table_name, &tx)?;
             self.table_scan_factory
-                .create(tx.clone(), table_name, &table_layout)?
+                .create(&tx, table_name, &table_layout)?
         };
 
         while table_scan.move_next()? {
@@ -281,7 +279,7 @@ mod stat_manager_test {
         let stat_manager = StatManagerImpl::new(&table_manager, Box::new(table_scan_factory));
 
         {
-            let result = stat_manager.get_stat_info("tbl", "A", tx.clone());
+            let result = stat_manager.get_stat_info("tbl", "A", &tx);
             assert!(result.is_ok());
             let stat_info = result.unwrap();
             assert_eq!(stat_info.get_num_blocks(), 1);
@@ -290,7 +288,7 @@ mod stat_manager_test {
             assert_eq!(stat_info.get_num_distinct_values(), 1);
         }
         {
-            let result = stat_manager.get_stat_info("tbl", "B", tx.clone());
+            let result = stat_manager.get_stat_info("tbl", "B", &tx);
             assert!(result.is_ok());
             let stat_info = result.unwrap();
             assert_eq!(stat_info.get_num_blocks(), 1);

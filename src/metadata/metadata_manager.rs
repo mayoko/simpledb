@@ -17,23 +17,23 @@ pub trait MetadataManager {
         &self,
         table_name: &str,
         schema: Schema,
-        tx: Rc<RefCell<Transaction>>,
+        tx: &Rc<RefCell<Transaction>>,
     ) -> AnyhowResult<()>;
-    fn get_layout(&self, table_name: &str, tx: Rc<RefCell<Transaction>>) -> AnyhowResult<Layout>;
+    fn get_layout(&self, table_name: &str, tx: &Rc<RefCell<Transaction>>) -> AnyhowResult<Layout>;
 
     fn create_view(
         &self,
         view_name: &str,
         view_def: &str,
-        tx: Rc<RefCell<Transaction>>,
+        tx: &Rc<RefCell<Transaction>>,
     ) -> AnyhowResult<()>;
-    fn get_view_def(&self, view_name: &str, tx: Rc<RefCell<Transaction>>) -> AnyhowResult<String>;
+    fn get_view_def(&self, view_name: &str, tx: &Rc<RefCell<Transaction>>) -> AnyhowResult<String>;
 
     fn get_stat_info(
         &self,
         table_name: &str,
         field_name: &str,
-        tx: Rc<RefCell<Transaction>>,
+        tx: &Rc<RefCell<Transaction>>,
     ) -> AnyhowResult<StatInfo>;
 }
 
@@ -48,12 +48,12 @@ impl MetadataManager for MetadataManagerImpl {
         &self,
         table_name: &str,
         schema: Schema,
-        tx: Rc<RefCell<Transaction>>,
+        tx: &Rc<RefCell<Transaction>>,
     ) -> AnyhowResult<()> {
         Ok(self.table_manager.create_table(table_name, schema, tx)?)
     }
 
-    fn get_layout(&self, table_name: &str, tx: Rc<RefCell<Transaction>>) -> AnyhowResult<Layout> {
+    fn get_layout(&self, table_name: &str, tx: &Rc<RefCell<Transaction>>) -> AnyhowResult<Layout> {
         Ok(self.table_manager.get_layout(table_name, tx)?)
     }
 
@@ -61,12 +61,12 @@ impl MetadataManager for MetadataManagerImpl {
         &self,
         view_name: &str,
         view_def: &str,
-        tx: Rc<RefCell<Transaction>>,
+        tx: &Rc<RefCell<Transaction>>,
     ) -> AnyhowResult<()> {
         Ok(self.view_manager.create_view(view_name, view_def, tx)?)
     }
 
-    fn get_view_def(&self, view_name: &str, tx: Rc<RefCell<Transaction>>) -> AnyhowResult<String> {
+    fn get_view_def(&self, view_name: &str, tx: &Rc<RefCell<Transaction>>) -> AnyhowResult<String> {
         Ok(self.view_manager.get_view_def(view_name, tx)?)
     }
 
@@ -74,7 +74,7 @@ impl MetadataManager for MetadataManagerImpl {
         &self,
         table_name: &str,
         field_name: &str,
-        tx: Rc<RefCell<Transaction>>,
+        tx: &Rc<RefCell<Transaction>>,
     ) -> AnyhowResult<StatInfo> {
         self.stat_manager.get_stat_info(table_name, field_name, tx)
     }

@@ -20,17 +20,17 @@ use super::{
 };
 
 pub trait ViewManager {
-    fn setup_if_not_exists(&self, tx: Rc<RefCell<Transaction>>) -> Result<(), ViewManagerError>;
+    fn setup_if_not_exists(&self, tx: &Rc<RefCell<Transaction>>) -> Result<(), ViewManagerError>;
     fn create_view(
         &self,
         view_name: &str,
         view_def: &str,
-        tx: Rc<RefCell<Transaction>>,
+        tx: &Rc<RefCell<Transaction>>,
     ) -> Result<(), ViewManagerError>;
     fn get_view_def(
         &self,
         view_name: &str,
-        tx: Rc<RefCell<Transaction>>,
+        tx: &Rc<RefCell<Transaction>>,
     ) -> Result<String, ViewManagerError>;
 }
 
@@ -76,7 +76,7 @@ impl<'a> ViewManagerImpl<'a> {
 impl<'a> ViewManager for ViewManagerImpl<'a> {
     // view manager が view を管理するために必要なファイルがまだ作成されていない場合、作成する
     // このメソッドは何回呼んでも問題ない
-    fn setup_if_not_exists(&self, tx: Rc<RefCell<Transaction>>) -> Result<(), ViewManagerError> {
+    fn setup_if_not_exists(&self, tx: &Rc<RefCell<Transaction>>) -> Result<(), ViewManagerError> {
         let mut schema = Schema::new();
         schema.add_field(
             VIEWCAT_VIEW_NAME_FIELD,
@@ -97,11 +97,9 @@ impl<'a> ViewManager for ViewManagerImpl<'a> {
         &self,
         view_name: &str,
         view_def: &str,
-        tx: Rc<RefCell<Transaction>>,
+        tx: &Rc<RefCell<Transaction>>,
     ) -> Result<(), ViewManagerError> {
-        let layout = self
-            .table_manager
-            .get_layout(VIEWCAT_TABLE_NAME, tx.clone())?;
+        let layout = self.table_manager.get_layout(VIEWCAT_TABLE_NAME, tx)?;
         let mut ts = self
             .table_scan_factory
             .create(tx, VIEWCAT_TABLE_NAME, &layout)?;
@@ -115,11 +113,9 @@ impl<'a> ViewManager for ViewManagerImpl<'a> {
     fn get_view_def(
         &self,
         view_name: &str,
-        tx: Rc<RefCell<Transaction>>,
+        tx: &Rc<RefCell<Transaction>>,
     ) -> Result<String, ViewManagerError> {
-        let layout = self
-            .table_manager
-            .get_layout(VIEWCAT_TABLE_NAME, tx.clone())?;
+        let layout = self.table_manager.get_layout(VIEWCAT_TABLE_NAME, tx)?;
         let mut ts = self
             .table_scan_factory
             .create(tx, VIEWCAT_TABLE_NAME, &layout)?;
@@ -201,7 +197,7 @@ mod view_manager_test {
         let view_manager = ViewManagerImpl::new(&table_manager, Box::new(table_scan_factory));
         let tx = Rc::new(RefCell::new(factory.create().unwrap()));
 
-        view_manager.setup_if_not_exists(tx.clone()).unwrap();
+        view_manager.setup_if_not_exists(&tx).unwrap();
     }
 
     #[test]
@@ -270,7 +266,7 @@ mod view_manager_test {
         let tx = Rc::new(RefCell::new(factory.create().unwrap()));
 
         view_manager
-            .create_view("view1", "select * from table1", tx)
+            .create_view("view1", "select * from table1", &tx)
             .unwrap();
     }
 
@@ -342,7 +338,7 @@ mod view_manager_test {
         let view_manager = ViewManagerImpl::new(&table_manager, Box::new(table_scan_factory));
         let tx = Rc::new(RefCell::new(factory.create().unwrap()));
 
-        let def = view_manager.get_view_def("view1", tx).unwrap();
+        let def = view_manager.get_view_def("view1", &tx).unwrap();
         assert_eq!(def, "select * from table1");
     }
 }
