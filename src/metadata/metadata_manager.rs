@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use anyhow::Result as AnyhowResult;
 
@@ -29,12 +29,11 @@ pub trait MetadataManager {
     ) -> AnyhowResult<()>;
     fn get_view_def(&self, view_name: &str, tx: &Rc<RefCell<Transaction>>) -> AnyhowResult<String>;
 
-    fn get_stat_info(
+    fn get_table_stat(
         &self,
         table_name: &str,
-        field_name: &str,
         tx: &Rc<RefCell<Transaction>>,
-    ) -> AnyhowResult<StatInfo>;
+    ) -> AnyhowResult<HashMap<String, StatInfo>>;
 }
 
 pub struct MetadataManagerImpl {
@@ -70,12 +69,11 @@ impl MetadataManager for MetadataManagerImpl {
         Ok(self.view_manager.get_view_def(view_name, tx)?)
     }
 
-    fn get_stat_info(
+    fn get_table_stat(
         &self,
         table_name: &str,
-        field_name: &str,
         tx: &Rc<RefCell<Transaction>>,
-    ) -> AnyhowResult<StatInfo> {
-        self.stat_manager.get_stat_info(table_name, field_name, tx)
+    ) -> AnyhowResult<HashMap<String, StatInfo>> {
+        self.stat_manager.get_table_stat(table_name, tx)
     }
 }

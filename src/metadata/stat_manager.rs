@@ -22,12 +22,20 @@ use super::{
 };
 
 pub trait StatManager {
-    fn get_stat_info(
+    /// 指定されたテーブルの指定されたフィールドの統計情報を取得する
+    fn get_field_stat(
         &self,
         table_name: &str,
         field_name: &str,
         tx: &Rc<RefCell<Transaction>>,
     ) -> AnyhowResult<StatInfo>;
+    /// 指定されたテーブルの統計情報を取得する
+    /// field-name -> 統計情報 のマップを返す
+    fn get_table_stat(
+        &self,
+        table_name: &str,
+        tx: &Rc<RefCell<Transaction>>,
+    ) -> AnyhowResult<HashMap<String, StatInfo>>;
 }
 
 pub enum ErrorKind {
@@ -63,7 +71,7 @@ pub struct StatManagerImpl<'a> {
 }
 
 impl StatManager for StatManagerImpl<'_> {
-    fn get_stat_info(
+    fn get_field_stat(
         &self,
         table_name: &str,
         field_name: &str,
@@ -104,6 +112,20 @@ impl StatManager for StatManagerImpl<'_> {
                     .value())
             }
         }
+    }
+    fn get_table_stat(
+        &self,
+        table_name: &str,
+        tx: &Rc<RefCell<Transaction>>,
+    ) -> AnyhowResult<HashMap<String, StatInfo>> {
+        let layout = self.table_manager.get_layout(table_name, tx)?;
+        let schema = layout.schema();
+        let mut table_stats = HashMap::new();
+        for field in schema.fields() {
+            let stat_info = self.get_field_stat(table_name, &field, tx)?;
+            table_stats.insert(field, stat_info);
+        }
+        Ok(table_stats)
     }
 }
 
@@ -279,7 +301,7 @@ mod stat_manager_test {
         let stat_manager = StatManagerImpl::new(&table_manager, Box::new(table_scan_factory));
 
         {
-            let result = stat_manager.get_stat_info("tbl", "A", &tx);
+            let result = stat_manager.get_field_stat("tbl", "A", &tx);
             assert!(result.is_ok());
             let stat_info = result.unwrap();
             assert_eq!(stat_info.get_num_blocks(), 1);
@@ -288,13 +310,31 @@ mod stat_manager_test {
             assert_eq!(stat_info.get_num_distinct_values(), 1);
         }
         {
-            let result = stat_manager.get_stat_info("tbl", "B", &tx);
+            let result = stat_manager.get_field_stat("tbl", "B", &tx);
             assert!(result.is_ok());
             let stat_info = result.unwrap();
             assert_eq!(stat_info.get_num_blocks(), 1);
             assert_eq!(stat_info.get_num_records(), 2);
             // こちらはバラバラの値が入っている
             assert_eq!(stat_info.get_num_distinct_values(), 2);
+        }
+        {
+            let result = stat_manager.get_field_stat("tbl", "C", &tx);
+            assert!(result.is_err());
+        }
+        {
+            let result = stat_manager.get_table_stat("tbl", &tx);
+            assert!(result.is_ok());
+            let table_stats = result.unwrap();
+            assert_eq!(table_stats.len(), 2);
+            let a_stat = table_stats.get("A").unwrap();
+            assert_eq!(a_stat.get_num_blocks(), 1);
+            assert_eq!(a_stat.get_num_records(), 2);
+            assert_eq!(a_stat.get_num_distinct_values(), 1);
+            let b_stat = table_stats.get("B").unwrap();
+            assert_eq!(b_stat.get_num_blocks(), 1);
+            assert_eq!(b_stat.get_num_records(), 2);
+            assert_eq!(b_stat.get_num_distinct_values(), 2);
         }
     }
 }
