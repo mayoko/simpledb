@@ -211,10 +211,10 @@ mod stat_manager_test {
         file::file_manager::FileManager,
         log::log_manager::LogManager,
         metadata::table_manager::MockTableManager,
+        query::scan::MockUpdateScan,
         record::{
             rid::Rid,
             schema::{FieldInfo, Schema},
-            table_scan::MockTableScan,
             table_scan_factory::MockTableScanFactory,
         },
         tx::{concurrency::lock_table::LockTable, transaction::TransactionFactory},
@@ -260,7 +260,7 @@ mod stat_manager_test {
             let mut table_scan_factory = MockTableScanFactory::new();
             table_scan_factory.expect_create().returning(|_, _, _| {
                 // 値が 2 個入っているようなテーブルスキャンを行う
-                let mut table_scan = MockTableScan::new();
+                let mut table_scan = MockUpdateScan::new();
                 table_scan.expect_move_next().once().returning(|| Ok(true));
                 table_scan.expect_move_next().once().returning(|| Ok(true));
                 table_scan.expect_move_next().once().returning(|| Ok(false));

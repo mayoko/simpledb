@@ -18,12 +18,9 @@ use super::{
 };
 
 use anyhow::{anyhow, Result as AnyhowResult};
-use mockall::mock;
 use thiserror::Error;
 
 use std::{cell::RefCell, rc::Rc};
-
-pub trait TableScan: ReadScan + UpdateScan {}
 
 /**
  * table の record を取得・操作するための構造体
@@ -53,8 +50,6 @@ pub(crate) enum TableScanError {
     #[error("record page error: {0}")]
     RecordPage(#[from] RecordPageError),
 }
-
-impl TableScan for TableScanImpl {}
 
 impl ReadScan for TableScanImpl {
     /// table scan の cursor を先頭に移動する
@@ -227,28 +222,6 @@ impl ReadScan for Box<TableScanImpl> {
     fn has_field(&self, field_name: &str) -> bool {
         self.as_ref().has_field(field_name)
     }
-}
-
-mock! {
-    pub TableScan {}
-    impl ReadScan for TableScan {
-        fn before_first(&mut self) -> AnyhowResult<()>;
-        fn move_next(&mut self) -> AnyhowResult<bool>;
-        fn get_val(&self, field_name: &str) -> AnyhowResult<Constant>;
-        fn get_int(&self, field_name: &str) -> AnyhowResult<i32>;
-        fn get_string(&self, field_name: &str) -> AnyhowResult<String>;
-        fn has_field(&self, field_name: &str) -> bool;
-    }
-    impl UpdateScan for TableScan {
-        fn set_val(&self, field_name: &str, val: &Constant) -> AnyhowResult<()>;
-        fn set_int(&self, field_name: &str, val: i32) -> AnyhowResult<()>;
-        fn set_string(&self, field_name: &str, val: &str) -> AnyhowResult<()>;
-        fn insert(&mut self) -> AnyhowResult<()>;
-        fn delete(&mut self) -> AnyhowResult<()>;
-        fn move_to_rid(&mut self, rid: &Rid) -> AnyhowResult<()>;
-        fn get_rid(&self) -> AnyhowResult<Rid>;
-    }
-    impl TableScan for TableScan {}
 }
 
 #[cfg(test)]

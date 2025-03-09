@@ -135,9 +135,9 @@ impl<'a> ViewManager for ViewManagerImpl<'a> {
 mod view_manager_test {
     use crate::{
         metadata::table_manager::MockTableManager,
+        query::scan::{MockUpdateScan, UpdateScan},
         record::{
             layout::Layout,
-            table_scan::{MockTableScan, TableScan},
             table_scan_factory::{MockTableScanFactory, TableScanFactoryImpl},
         },
     };
@@ -241,7 +241,7 @@ mod view_manager_test {
                 .times(1)
                 .returning(move |_, _, _| {
                     let table_scan = {
-                        let mut table_scan = MockTableScan::new();
+                        let mut table_scan = MockUpdateScan::new();
                         {
                             table_scan.expect_insert().times(1).returning(|| Ok(()));
                             table_scan
@@ -257,7 +257,7 @@ mod view_manager_test {
                         }
                         table_scan
                     };
-                    Ok(Box::new(table_scan) as Box<dyn TableScan>)
+                    Ok(Box::new(table_scan) as Box<dyn UpdateScan>)
                 });
             table_scan_factory
         };
@@ -311,7 +311,7 @@ mod view_manager_test {
                 .times(1)
                 .returning(move |_, _, _| {
                     let table_scan = {
-                        let mut table_scan = MockTableScan::new();
+                        let mut table_scan = MockUpdateScan::new();
                         table_scan
                             .expect_move_next()
                             .times(1)
@@ -330,7 +330,7 @@ mod view_manager_test {
                             .returning(|_| Ok("select * from table1".to_string()));
                         table_scan
                     };
-                    Ok(Box::new(table_scan) as Box<dyn TableScan>)
+                    Ok(Box::new(table_scan) as Box<dyn UpdateScan>)
                 });
             table_scan_factory
         };

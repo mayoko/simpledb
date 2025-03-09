@@ -85,10 +85,14 @@ mock! {
         fn before_first(&mut self) -> AnyhowResult<()>;
         fn move_next(&mut self) -> AnyhowResult<bool>;
         fn get_val(&self, field_name: &str) -> AnyhowResult<Constant>;
+        fn get_int(&self, field_name: &str) -> AnyhowResult<i32>;
+        fn get_string(&self, field_name: &str) -> AnyhowResult<String>;
         fn has_field(&self, field_name: &str) -> bool;
     }
     impl UpdateScan for UpdateScan {
         fn set_val(&self, field_name: &str, val: &Constant) -> AnyhowResult<()>;
+        fn set_int(&self, field_name: &str, val: i32) -> AnyhowResult<()>;
+        fn set_string(&self, field_name: &str, val: &str) -> AnyhowResult<()>;
         fn insert(&mut self) -> AnyhowResult<()>;
         fn delete(&mut self) -> AnyhowResult<()>;
         fn move_to_rid(&mut self, rid: &Rid) -> AnyhowResult<()>;
