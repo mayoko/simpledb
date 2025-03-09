@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use anyhow::Result as AnyhowResult;
 use mockall::automock;
 use thiserror::Error;
@@ -7,7 +5,6 @@ use thiserror::Error;
 use crate::{
     query::scan::{ReadScan, UpdateScan},
     record::schema::Schema,
-    tx::transaction::Transaction,
 };
 
 #[derive(Error, Debug)]
