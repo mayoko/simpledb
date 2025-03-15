@@ -2,10 +2,7 @@ use std::fmt;
 
 use crate::record::schema::Schema;
 
-use super::{
-    scan::Scan,
-    term::{ReductionFactor, Term},
-};
+use super::{scan::Scan, term::Term};
 
 use anyhow::Result as AnyhowResult;
 use mockall::automock;
@@ -19,8 +16,6 @@ pub trait Predicate {
     fn is_satisfied(&self, scan: &Scan) -> AnyhowResult<bool>;
     /// この predicate が schema に適用可能かどうかを判定する
     fn can_apply(&self, schema: &Schema) -> bool;
-    // この predicate が満たされるときに、どれだけ scan の結果が絞られるかを返す
-    // fn reduction_factor(&self) -> ReductionFactor;
 }
 
 dyn_clone::clone_trait_object!(Term);
@@ -41,14 +36,6 @@ impl Predicate for ProductPredicate {
 
         Ok(true)
     }
-
-    // この predicate が満たされるときに、どれだけ scan の結果が絞られるかを返す
-    // pub fn reduction_factor(&self) -> ReductionFactor {
-    //     self.terms
-    //         .iter()
-    //         .map(|term| term.reduction_factor())
-    //         .product()
-    // }
 
     fn can_apply(&self, schema: &Schema) -> bool {
         self.terms.iter().all(|term| term.can_apply(schema))

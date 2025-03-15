@@ -1,7 +1,6 @@
-use std::fmt;
-use std::ops::Mul;
-
 use crate::record::schema::Schema;
+
+use std::fmt;
 
 use super::{constant::Constant, expression::Expression, scan::Scan};
 
@@ -11,38 +10,11 @@ use dyn_clone::DynClone;
 /**
  * Select の where 句で用いられる条件のうちの一つを表す (A=B, A<B など)
  */
-pub trait Term: std::fmt::Display + std::fmt::Debug + DynClone {
+pub trait Term: fmt::Display + fmt::Debug + DynClone {
     /// この term が満たされるかどうかを判定する
     fn is_satisfied(&self, scan: &Scan) -> AnyhowResult<bool>;
     /// この term が schema に適用可能かどうかを判定する
     fn can_apply(&self, schema: &Schema) -> bool;
-    // この term が満たされるときに、どれだけ scan の結果が絞られるかを返す
-    // fn reduction_factor(&self) -> ReductionFactor;
-}
-
-/**
- * この term が満たされるときに、どれだけ scan の結果が絞られるかを返す
- * 値が大きいほど scan の結果が絞られる
- */
-#[derive(Debug, Clone, Copy)]
-pub enum ReductionFactor {
-    // この term が満たされるときに、scan の結果が 1/n に絞られる
-    Constant(f64),
-    // この term が満たされる scan の結果が存在しない
-    Infinity(),
-}
-
-impl Mul for ReductionFactor {
-    type Output = Self;
-
-    fn mul(self, rhs: Self) -> Self {
-        match (self, rhs) {
-            (ReductionFactor::Constant(lhs), ReductionFactor::Constant(rhs)) => {
-                ReductionFactor::Constant(lhs * rhs)
-            }
-            _ => ReductionFactor::Infinity(),
-        }
-    }
 }
 
 /**
