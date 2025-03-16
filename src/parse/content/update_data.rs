@@ -1,4 +1,4 @@
-use crate::query::{expression::Expression, predicate::ProductPredicate};
+use crate::plan::{expression::Expression, predicate::ProductPredicate};
 
 pub struct UpdateData {
     table: String,

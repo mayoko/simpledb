@@ -1,5 +1,3 @@
-use std::fmt;
-
 use crate::record::schema::Schema;
 
 use super::{scan::Scan, term::Term};
@@ -78,19 +76,5 @@ impl ProductPredicate {
             .collect();
 
         Ok(Self { terms })
-    }
-}
-
-impl fmt::Display for ProductPredicate {
-    /// SQL の where 句のように表示する
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut query = String::new();
-        for (i, term) in self.terms.iter().enumerate() {
-            query += &term.to_string();
-            if i != self.terms.len() - 1 {
-                query += " and ";
-            }
-        }
-        write!(f, "{}", query)
     }
 }

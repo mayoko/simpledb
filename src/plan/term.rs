@@ -1,15 +1,16 @@
-use super::{plannable::Plannable, reduction_factor::ReductionFactor};
+use super::{expression::Expression, plannable::Plannable, reduction_factor::ReductionFactor};
 use crate::plan::plan::Plan;
 
 use std::cmp::max;
 
 use crate::query::{
     constant::Constant,
-    expression::Expression,
     term::{EqualTerm as EqualTermForScan, Term as TermForScan},
 };
 
 use anyhow::Result as AnyhowResult;
+
+use std::fmt;
 
 /**
  * Select の where 句で A = B の条件を表す term
@@ -34,6 +35,14 @@ impl Plannable for Term {
     fn reduction_factor(&self, plan: &dyn Plan) -> AnyhowResult<ReductionFactor> {
         match self {
             Term::Equal(equal_term) => equal_term.reduction_factor(plan),
+        }
+    }
+}
+
+impl fmt::Display for Term {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Term::Equal(equal_term) => write!(f, "{}", equal_term),
         }
     }
 }
@@ -108,6 +117,12 @@ impl EqualTerm {
     }
 
     pub fn convert_for_scan(&self) -> EqualTermForScan {
-        EqualTermForScan::new(self.lhs.clone(), self.rhs.clone())
+        EqualTermForScan::new(self.lhs.convert_for_scan(), self.rhs.convert_for_scan())
+    }
+}
+
+impl fmt::Display for EqualTerm {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} = {}", self.lhs, self.rhs)
     }
 }

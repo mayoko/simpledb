@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::query::predicate::ProductPredicate;
+use crate::plan::predicate::ProductPredicate;
 
 pub struct QueryData {
     fields: Vec<String>,

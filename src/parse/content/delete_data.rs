@@ -1,4 +1,4 @@
-use crate::query::predicate::ProductPredicate;
+use crate::plan::predicate::ProductPredicate;
 
 pub struct DeleteData {
     table: String,

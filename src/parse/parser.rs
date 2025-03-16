@@ -1,10 +1,10 @@
 use crate::{
-    query::{
-        constant::Constant,
+    plan::{
         expression::Expression,
         predicate::ProductPredicate,
         term::{EqualTerm, Term},
     },
+    query::constant::Constant,
     record::schema::{FieldInfo, Schema},
 };
 
@@ -103,10 +103,10 @@ impl Parser for ParserImpl {
         Ok(EqualTerm::new(lhs, rhs))
     }
     fn parse_predicate(&mut self) -> AnyhowResult<ProductPredicate> {
-        let mut terms: Vec<Box<dyn Term>> = vec![Box::new(self.parse_equal_term()?)];
+        let mut terms: Vec<Term> = vec![Term::Equal(self.parse_equal_term()?)];
         while self.lexer.is_matched(Token::Keyword("and".to_string())) {
             self.lexer.eat_exact(Token::Keyword("and".to_string()))?;
-            terms.push(Box::new(self.parse_equal_term()?));
+            terms.push(Term::Equal(self.parse_equal_term()?));
         }
         Ok(ProductPredicate::new(terms))
     }

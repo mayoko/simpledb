@@ -7,6 +7,8 @@ use crate::query::predicate::{
 
 use anyhow::Result as AnyhowResult;
 
+use std::fmt;
+
 /**
  * Select の where 句で用いられる条件を表す (A=B AND C<B など)
  * 同じ名前の struct が query 以下のパッケージにも存在するが、こちらは実行計画を立てるうえで使うことを意図されている
@@ -84,5 +86,19 @@ impl ProductPredicate {
                 .map(|term| term.convert_for_scan())
                 .collect(),
         )
+    }
+}
+
+impl fmt::Display for ProductPredicate {
+    /// SQL の where 句のように表示する
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut query = String::new();
+        for (i, term) in self.terms.iter().enumerate() {
+            query += &term.to_string();
+            if i != self.terms.len() - 1 {
+                query += " and ";
+            }
+        }
+        write!(f, "{}", query)
     }
 }
