@@ -5,6 +5,7 @@ mod log;
 mod metadata;
 mod parse;
 mod plan;
+mod planner;
 mod query;
 mod record;
 mod tx;
