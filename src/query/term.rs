@@ -2,7 +2,7 @@ use crate::record::schema::Schema;
 
 use std::fmt;
 
-use super::{expression::Expression, scan::Scan};
+use super::{constant::Constant, expression::Expression, scan::Scan};
 
 use anyhow::Result as AnyhowResult;
 use dyn_clone::DynClone;
@@ -28,8 +28,8 @@ pub struct EqualTerm {
 
 impl Term for EqualTerm {
     fn is_satisfied(&self, scan: &Scan) -> AnyhowResult<bool> {
-        let lhs_val = self.lhs.eval(scan)?;
-        let rhs_val = self.rhs.eval(scan)?;
+        let lhs_val = eval_expr(&self.lhs, scan)?;
+        let rhs_val = eval_expr(&self.rhs, scan)?;
 
         Ok(lhs_val == rhs_val)
     }
@@ -42,5 +42,12 @@ impl Term for EqualTerm {
 impl EqualTerm {
     pub fn new(lhs: Expression, rhs: Expression) -> Self {
         Self { lhs, rhs }
+    }
+}
+
+fn eval_expr(expr: &Expression, scan: &Scan) -> AnyhowResult<Constant> {
+    match scan {
+        Scan::ReadOnly(ref scan) => expr.eval(scan.as_ref()),
+        Scan::Updatable(ref scan) => expr.eval(scan.as_ref()),
     }
 }

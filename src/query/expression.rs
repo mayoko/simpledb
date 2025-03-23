@@ -1,8 +1,6 @@
-use std::fmt;
-
 use crate::record::schema::Schema;
 
-use super::{constant::Constant, scan::Scan};
+use super::{constant::Constant, scan::ReadScan};
 
 use anyhow::Result as AnyhowResult;
 
@@ -16,13 +14,10 @@ pub enum Expression {
  * Select の where 句で用いられる条件で、A=B などの比較における A または B を表す
  */
 impl Expression {
-    pub fn eval(&self, scan: &Scan) -> AnyhowResult<Constant> {
+    pub fn eval(&self, scan: &dyn ReadScan) -> AnyhowResult<Constant> {
         match self {
             Expression::Constant(constant) => Ok(constant.clone()),
-            Expression::Field(field_name) => match scan {
-                Scan::ReadOnly(scan) => scan.get_val(field_name),
-                Scan::Updatable(scan) => scan.get_val(field_name),
-            },
+            Expression::Field(field_name) => scan.get_val(field_name),
         }
     }
 

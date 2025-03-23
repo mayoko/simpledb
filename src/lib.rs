@@ -1,5 +1,6 @@
 mod buffer;
 mod constants;
+mod exec;
 mod file;
 mod log;
 mod metadata;

@@ -38,6 +38,8 @@ pub trait Parser {
     fn parse_predicate(&mut self) -> AnyhowResult<ProductPredicate>;
     /// select 文の取得
     fn parse_query(&mut self) -> AnyhowResult<QueryData>;
+    /// insert, delete, update, create table, create view, create index のいずれかの文の取得
+    fn parse_update_command(&mut self) -> AnyhowResult<UpdateCommand>;
     /// insert 文の取得
     fn parse_insert(&mut self) -> AnyhowResult<InsertData>;
     /// delete 文の取得
@@ -63,6 +65,15 @@ pub enum ParserError {
 
 pub struct ParserImpl {
     lexer: Lexer,
+}
+
+pub enum UpdateCommand {
+    Insert(InsertData),
+    Delete(DeleteData),
+    Update(UpdateData),
+    CreateTable(CreateTableData),
+    CreateView(CreateViewData),
+    CreateIndex(CreateIndexData),
 }
 
 impl Parser for ParserImpl {
@@ -127,6 +138,32 @@ impl Parser for ParserImpl {
             ))
         }
     }
+    fn parse_update_command(&mut self) -> AnyhowResult<UpdateCommand> {
+        if self.lexer.is_matched(Token::Keyword("insert".to_string())) {
+            Ok(UpdateCommand::Insert(self.parse_insert()?))
+        } else if self.lexer.is_matched(Token::Keyword("delete".to_string())) {
+            Ok(UpdateCommand::Delete(self.parse_delete()?))
+        } else if self.lexer.is_matched(Token::Keyword("update".to_string())) {
+            Ok(UpdateCommand::Update(self.parse_update()?))
+        } else if self.lexer.is_matched(Token::Keyword("create".to_string())) {
+            self.lexer.eat_exact(Token::Keyword("create".to_string()))?;
+            if self.lexer.is_matched(Token::Keyword("table".to_string())) {
+                Ok(UpdateCommand::CreateTable(self._parse_create_table(true)?))
+            } else if self.lexer.is_matched(Token::Keyword("view".to_string())) {
+                Ok(UpdateCommand::CreateView(self._parse_create_view(true)?))
+            } else if self.lexer.is_matched(Token::Keyword("index".to_string())) {
+                Ok(UpdateCommand::CreateIndex(self._parse_create_index(true)?))
+            } else {
+                Err(anyhow!(ParserError::UnexpectedToken(
+                    "expected table, view, or index for create command".to_string()
+                )))
+            }
+        } else {
+            Err(anyhow!(ParserError::UnexpectedToken(
+                "expected insert, delete, update, or create for udpate command".to_string()
+            )))
+        }
+    }
     fn parse_insert(&mut self) -> AnyhowResult<InsertData> {
         self.lexer.eat_exact(Token::Keyword("insert".to_string()))?;
         self.lexer.eat_exact(Token::Keyword("into".to_string()))?;
@@ -168,32 +205,13 @@ impl Parser for ParserImpl {
         Ok(UpdateData::new(table_name, field, value, predicate))
     }
     fn parse_create_table(&mut self) -> AnyhowResult<CreateTableData> {
-        self.lexer.eat_exact(Token::Keyword("create".to_string()))?;
-        self.lexer.eat_exact(Token::Keyword("table".to_string()))?;
-        let table = self.lexer.eat_id()?;
-        self.lexer.eat_exact(Token::Delimiter('('))?;
-        let schema = self.parse_field_definitions()?;
-        self.lexer.eat_exact(Token::Delimiter(')'))?;
-        Ok(CreateTableData::new(table, schema))
+        self._parse_create_table(false)
     }
     fn parse_create_view(&mut self) -> AnyhowResult<CreateViewData> {
-        self.lexer.eat_exact(Token::Keyword("create".to_string()))?;
-        self.lexer.eat_exact(Token::Keyword("view".to_string()))?;
-        let view_name = self.lexer.eat_id()?;
-        self.lexer.eat_exact(Token::Keyword("as".to_string()))?;
-        let query = self.parse_query()?;
-        Ok(CreateViewData::new(view_name, query))
+        self._parse_create_view(false)
     }
     fn parse_create_index(&mut self) -> AnyhowResult<CreateIndexData> {
-        self.lexer.eat_exact(Token::Keyword("create".to_string()))?;
-        self.lexer.eat_exact(Token::Keyword("index".to_string()))?;
-        let index_name = self.lexer.eat_id()?;
-        self.lexer.eat_exact(Token::Keyword("on".to_string()))?;
-        let table_name = self.lexer.eat_id()?;
-        self.lexer.eat_exact(Token::Delimiter('('))?;
-        let field_name = self.lexer.eat_id()?;
-        self.lexer.eat_exact(Token::Delimiter(')'))?;
-        Ok(CreateIndexData::new(index_name, table_name, field_name))
+        self._parse_create_index(false)
     }
 }
 
@@ -246,6 +264,46 @@ impl ParserImpl {
             schema.add_all(&self.parse_field_definitions()?)?;
         }
         Ok(schema)
+    }
+    fn _parse_create_table(
+        &mut self,
+        is_create_token_eaten: bool,
+    ) -> AnyhowResult<CreateTableData> {
+        if !is_create_token_eaten {
+            self.lexer.eat_exact(Token::Keyword("create".to_string()))?;
+        }
+        self.lexer.eat_exact(Token::Keyword("table".to_string()))?;
+        let table = self.lexer.eat_id()?;
+        self.lexer.eat_exact(Token::Delimiter('('))?;
+        let schema = self.parse_field_definitions()?;
+        self.lexer.eat_exact(Token::Delimiter(')'))?;
+        Ok(CreateTableData::new(table, schema))
+    }
+    fn _parse_create_view(&mut self, is_create_token_eaten: bool) -> AnyhowResult<CreateViewData> {
+        if !is_create_token_eaten {
+            self.lexer.eat_exact(Token::Keyword("create".to_string()))?;
+        }
+        self.lexer.eat_exact(Token::Keyword("view".to_string()))?;
+        let view_name = self.lexer.eat_id()?;
+        self.lexer.eat_exact(Token::Keyword("as".to_string()))?;
+        let query = self.parse_query()?;
+        Ok(CreateViewData::new(view_name, query))
+    }
+    fn _parse_create_index(
+        &mut self,
+        is_create_token_eaten: bool,
+    ) -> AnyhowResult<CreateIndexData> {
+        if !is_create_token_eaten {
+            self.lexer.eat_exact(Token::Keyword("create".to_string()))?;
+        }
+        self.lexer.eat_exact(Token::Keyword("index".to_string()))?;
+        let index_name = self.lexer.eat_id()?;
+        self.lexer.eat_exact(Token::Keyword("on".to_string()))?;
+        let table_name = self.lexer.eat_id()?;
+        self.lexer.eat_exact(Token::Delimiter('('))?;
+        let field_name = self.lexer.eat_id()?;
+        self.lexer.eat_exact(Token::Delimiter(')'))?;
+        Ok(CreateIndexData::new(index_name, table_name, field_name))
     }
 }
 
@@ -356,5 +414,50 @@ mod parser_test {
         assert_eq!(create_index_data.index_name(), "x");
         assert_eq!(create_index_data.table_name(), "y");
         assert_eq!(create_index_data.field_name(), "a");
+    }
+    #[test]
+    fn test_update_command() {
+        // insert
+        {
+            let query = "insert into x (a, b) values (3, 'string')";
+            let mut parser = ParserImpl::new(query.to_string()).unwrap();
+            let update_command = parser.parse_update_command().unwrap();
+            assert!(matches!(update_command, UpdateCommand::Insert(_)));
+        }
+        // delete
+        {
+            let query = "delete from x where a = 3";
+            let mut parser = ParserImpl::new(query.to_string()).unwrap();
+            let update_command = parser.parse_update_command().unwrap();
+            assert!(matches!(update_command, UpdateCommand::Delete(_)));
+        }
+        // update
+        {
+            let query = "update x set a = 3 where b = 'string'";
+            let mut parser = ParserImpl::new(query.to_string()).unwrap();
+            let update_command = parser.parse_update_command().unwrap();
+            assert!(matches!(update_command, UpdateCommand::Update(_)));
+        }
+        // create table
+        {
+            let query = "create table x (a int)";
+            let mut parser = ParserImpl::new(query.to_string()).unwrap();
+            let update_command = parser.parse_update_command().unwrap();
+            assert!(matches!(update_command, UpdateCommand::CreateTable(_)));
+        }
+        // create view
+        {
+            let query = "create view x as select a from y";
+            let mut parser = ParserImpl::new(query.to_string()).unwrap();
+            let update_command = parser.parse_update_command().unwrap();
+            assert!(matches!(update_command, UpdateCommand::CreateView(_)));
+        }
+        // create index
+        {
+            let query = "create index x on y (a)";
+            let mut parser = ParserImpl::new(query.to_string()).unwrap();
+            let update_command = parser.parse_update_command().unwrap();
+            assert!(matches!(update_command, UpdateCommand::CreateIndex(_)));
+        }
     }
 }
