@@ -96,8 +96,8 @@ impl StatManager for StatManagerImpl<'_> {
             Some(stat_info) => Ok(*stat_info.value()),
             None => {
                 // 統計情報が見つからない場合は再計算する
-                let table_layout = self.table_manager.get_layout(table_name, &tx)?;
-                let table_stats = self.calc_table_stats(table_name, table_layout, tx.clone())?;
+                let table_layout = self.table_manager.get_layout(table_name, tx)?;
+                let table_stats = self.calc_table_stats(table_name, table_layout, &tx)?;
                 for (field_id, stat_info) in table_stats {
                     self.field_stats.insert(field_id, stat_info);
                 }
@@ -153,7 +153,7 @@ impl<'a> StatManagerImpl<'a> {
         while tcat_scan.move_next()? {
             let table_name = tcat_scan.get_string(TBLCAT_TBLNAME_FIELD)?;
             let table_layout = self.table_manager.get_layout(&table_name, &tx)?;
-            let stats_for_table = self.calc_table_stats(&table_name, table_layout, tx.clone())?;
+            let stats_for_table = self.calc_table_stats(&table_name, table_layout, &tx)?;
             for (field_id, stat_info) in stats_for_table {
                 self.field_stats.insert(field_id, stat_info);
             }
@@ -167,16 +167,28 @@ impl<'a> StatManagerImpl<'a> {
         &self,
         table_name: &str,
         table_layout: Layout,
-        tx: Rc<RefCell<Transaction>>,
+        tx: &Rc<RefCell<Transaction>>,
     ) -> AnyhowResult<DashMap<FieldId, StatInfo>> {
         let mut num_blocks = 0u64;
         let mut num_records = 0;
-        let mut field_to_values: HashMap<FieldId, HashSet<Constant>> = HashMap::new();
+        // 各フィールドのユニークな値を保持するための HashMap を作成
+        // 空の HashSet を持った状態で初期化
+        let mut field_to_values = {
+            let mut field_to_values = HashMap::new();
+            for field in table_layout.schema().fields() {
+                let field_id = FieldId {
+                    table_name: table_name.to_string(),
+                    field_name: field,
+                };
+                field_to_values.insert(field_id, HashSet::new());
+            }
+            field_to_values
+        };
 
         let mut table_scan = {
-            let table_layout = self.table_manager.get_layout(table_name, &tx)?;
+            let table_layout = self.table_manager.get_layout(table_name, tx)?;
             self.table_scan_factory
-                .create(&tx, table_name, &table_layout)?
+                .create(tx, table_name, &table_layout)?
         };
 
         while table_scan.move_next()? {
@@ -200,6 +212,18 @@ impl<'a> StatManagerImpl<'a> {
             dash_map.insert(field_id, stat_info);
         }
         Ok(dash_map)
+    }
+}
+
+pub struct StatManagerFactory {}
+
+impl StatManagerFactory {
+    pub fn create<'a>(
+        table_manager: &'a dyn TableManager,
+        table_scan_factory: Box<dyn TableScanFactory>,
+    ) -> Box<dyn StatManager + 'a> {
+        let stat_manager = StatManagerImpl::new(table_manager, table_scan_factory);
+        Box::new(stat_manager)
     }
 }
 

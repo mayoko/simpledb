@@ -1,15 +1,15 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 
 use anyhow::Result as AnyhowResult;
 
 use crate::{
-    record::{layout::Layout, schema::Schema},
+    record::{layout::Layout, schema::Schema, table_scan_factory::TableScanFactoryImpl},
     tx::transaction::Transaction,
 };
 
 use super::{
-    stat_info::StatInfo, stat_manager::StatManager, table_manager::TableManager,
-    view_manager::ViewManager,
+    stat_info::StatInfo, stat_manager::StatManagerFactory, table_manager::TableManager,
+    view_manager::ViewManagerFactory,
 };
 
 pub trait MetadataManager {
@@ -37,9 +37,7 @@ pub trait MetadataManager {
 }
 
 pub struct MetadataManagerImpl {
-    table_manager: Box<dyn TableManager>,
-    view_manager: Box<dyn ViewManager>,
-    stat_manager: Box<dyn StatManager>,
+    table_manager: Arc<dyn TableManager>,
 }
 
 impl MetadataManager for MetadataManagerImpl {
@@ -62,11 +60,19 @@ impl MetadataManager for MetadataManagerImpl {
         view_def: &str,
         tx: &Rc<RefCell<Transaction>>,
     ) -> AnyhowResult<()> {
-        Ok(self.view_manager.create_view(view_name, view_def, tx)?)
+        let view_manager = ViewManagerFactory::create(
+            self.table_manager.as_ref(),
+            Box::new(TableScanFactoryImpl::new()),
+        );
+        Ok(view_manager.create_view(view_name, view_def, tx)?)
     }
 
     fn get_view_def(&self, view_name: &str, tx: &Rc<RefCell<Transaction>>) -> AnyhowResult<String> {
-        Ok(self.view_manager.get_view_def(view_name, tx)?)
+        let view_manager = ViewManagerFactory::create(
+            self.table_manager.as_ref(),
+            Box::new(TableScanFactoryImpl::new()),
+        );
+        Ok(view_manager.get_view_def(view_name, tx)?)
     }
 
     fn get_table_stat(
@@ -74,6 +80,16 @@ impl MetadataManager for MetadataManagerImpl {
         table_name: &str,
         tx: &Rc<RefCell<Transaction>>,
     ) -> AnyhowResult<HashMap<String, StatInfo>> {
-        self.stat_manager.get_table_stat(table_name, tx)
+        let stat_manager = StatManagerFactory::create(
+            self.table_manager.as_ref(),
+            Box::new(TableScanFactoryImpl::new()),
+        );
+        stat_manager.get_table_stat(table_name, tx)
+    }
+}
+
+impl MetadataManagerImpl {
+    pub fn new(table_manager: Arc<dyn TableManager>) -> AnyhowResult<Self> {
+        Ok(Self { table_manager })
     }
 }

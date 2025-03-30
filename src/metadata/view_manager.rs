@@ -44,6 +44,18 @@ pub struct ViewManagerImpl<'a> {
     table_scan_factory: Box<dyn TableScanFactory>,
 }
 
+pub struct ViewManagerFactory {}
+
+impl ViewManagerFactory {
+    pub fn create<'a>(
+        table_manager: &'a dyn TableManager,
+        table_scan_factory: Box<dyn TableScanFactory>,
+    ) -> Box<dyn ViewManager + 'a> {
+        let view_manager = ViewManagerImpl::new(table_manager, table_scan_factory);
+        Box::new(view_manager)
+    }
+}
+
 #[derive(Error, Debug)]
 pub(crate) enum ViewManagerError {
     #[error("table manager error: {0}")]

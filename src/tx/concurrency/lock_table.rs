@@ -26,11 +26,11 @@ pub struct LockTable {
 #[derive(Error, Debug)]
 pub enum LockTableError {
     #[error("Failed to acquire lock")]
-    LockError(String),
+    Lock(String),
     #[error("timeout error")]
-    TimeoutError(String),
+    Timeout(String),
     #[error("lock table general error")]
-    GeneralError(String),
+    General(String),
 }
 
 impl LockTable {
@@ -59,7 +59,7 @@ impl LockTable {
             let mut lock = lock_entry_inner
                 .value()
                 .lock()
-                .map_err(|_| LockTableError::LockError("failed to acquire lock".into()))?;
+                .map_err(|_| LockTableError::Lock("failed to acquire lock".into()))?;
             match *lock {
                 Lock::Shared(ref_count) => {
                     *lock = Lock::Shared(ref_count + 1);
@@ -69,7 +69,7 @@ impl LockTable {
                     // 他のスレッドが排他ロックを取得している場合は待つ
                     let queue = self.get_or_create_queue(blk);
                     let mut queue = queue.lock().map_err(|_| {
-                        LockTableError::LockError(
+                        LockTableError::Lock(
                             "failed to acquire the lock of waiting queue list".into(),
                         )
                     })?;
@@ -85,7 +85,7 @@ impl LockTable {
                 }
             }
         }
-        Err(LockTableError::TimeoutError(
+        Err(LockTableError::Timeout(
             "failed to acquire shared lock within the time limit".into(),
         ))
     }
@@ -106,7 +106,7 @@ impl LockTable {
                     // 他のスレッドがロックを取得している場合は待つ
                     let queue = self.get_or_create_queue(blk);
                     let mut queue = queue.lock().map_err(|_| {
-                        LockTableError::LockError(
+                        LockTableError::Lock(
                             "failed to acquire the lock of waiting queue list".into(),
                         )
                     })?;
@@ -126,7 +126,7 @@ impl LockTable {
                 }
             }
         }
-        Err(LockTableError::TimeoutError(
+        Err(LockTableError::Timeout(
             "failed to acquire exclusive lock within the time limit".into(),
         ))
     }
@@ -144,7 +144,7 @@ impl LockTable {
             match lock_entry {
             dashmap::mapref::entry::Entry::Occupied(lock_entry) => {
                 let mut lock = lock_entry.get().lock().map_err(|_| {
-                    LockTableError::LockError(format!(
+                    LockTableError::Lock(format!(
                         "failed to acquire the lock value for blk {:?}",
                         blk.clone()
                     ))
@@ -158,7 +158,7 @@ impl LockTable {
                         // 他のスレッドが排他ロックを取得している場合は待つ
                         let queue = self.get_or_create_queue(blk);
                         let mut queue = queue.lock().map_err(|_| {
-                            LockTableError::LockError(
+                            LockTableError::Lock(
                                 "failed to acquire the lock of waiting queue list".into(),
                             )
                         })?;
@@ -173,13 +173,13 @@ impl LockTable {
                     }
                 }
             }
-            dashmap::mapref::entry::Entry::Vacant(_) => return Err(LockTableError::GeneralError(
+            dashmap::mapref::entry::Entry::Vacant(_) => return Err(LockTableError::General(
                 "promote_to_xlock method must be called after the specified block is shared locked"
                     .into(),
             )),
         }
         }
-        Err(LockTableError::TimeoutError(
+        Err(LockTableError::Timeout(
             "failed to acquire exclusive lock within the time limit".into(),
         ))
     }
@@ -194,7 +194,7 @@ impl LockTable {
         match lock_entry {
             dashmap::mapref::entry::Entry::Occupied(lock_entry) => {
                 let mut lock = lock_entry.get().lock().map_err(|_| {
-                    LockTableError::LockError(format!(
+                    LockTableError::Lock(format!(
                         "failed to unlock the lock value for blk {:?}",
                         blk.clone()
                     ))
@@ -217,7 +217,7 @@ impl LockTable {
                         dashmap::mapref::entry::Entry::Occupied(queue_entry) => {
                             let queue_arc = queue_entry.get();
                             let mut queue = queue_arc.lock().map_err(|_| {
-                                LockTableError::LockError(
+                                LockTableError::Lock(
                                     "failed to acquire the lock of waiting queue list".into(),
                                 )
                             })?;
@@ -235,7 +235,7 @@ impl LockTable {
                 }
                 Ok(())
             }
-            dashmap::mapref::entry::Entry::Vacant(_) => Err(LockTableError::GeneralError(
+            dashmap::mapref::entry::Entry::Vacant(_) => Err(LockTableError::General(
                 "unlock method must be called after the specified block is locked".into(),
             )),
         }

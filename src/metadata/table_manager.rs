@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 
 use mockall::automock;
 use thiserror::Error;
@@ -48,7 +48,7 @@ pub trait TableManager {
 pub struct TableManagerImpl {
     tcat_layout: Layout,
     fcat_layout: Layout,
-    table_scan_factory: Box<dyn TableScanFactory>,
+    table_scan_factory: Arc<dyn TableScanFactory>,
 }
 
 #[derive(Error, Debug)]
@@ -162,7 +162,7 @@ impl TableManager for TableManagerImpl {
 }
 
 impl TableManagerImpl {
-    pub fn new(table_scan_factory: Box<dyn TableScanFactory>) -> Result<Self, LayoutError> {
+    pub fn new(table_scan_factory: Arc<dyn TableScanFactory>) -> Result<Self, LayoutError> {
         let mut tcat_schema = Schema::new();
         tcat_schema.add_field(TBLCAT_TABLE_NAME, FieldInfo::String(MAX_TABLE_NAME_LENGTH));
         tcat_schema.add_field(TBLCAT_SLOTSIZE_FIELD, FieldInfo::Integer);
@@ -277,7 +277,7 @@ mod table_manager_test {
         let dir = tempdir().unwrap();
         let factory = setup_factory(&dir);
         let tx = Rc::new(RefCell::new(factory.create().unwrap()));
-        let table_scan_factory = Box::new(TableScanFactoryImpl::new());
+        let table_scan_factory = Arc::new(TableScanFactoryImpl::new());
 
         let table_manager = TableManagerImpl::new(table_scan_factory).unwrap();
         table_manager.setup_if_not_exists(&tx).unwrap();
@@ -299,7 +299,7 @@ mod table_manager_test {
         let dir = tempdir().unwrap();
         let factory = setup_factory(&dir);
         let tx = Rc::new(RefCell::new(factory.create().unwrap()));
-        let table_scan_factory = Box::new(TableScanFactoryImpl::new());
+        let table_scan_factory = Arc::new(TableScanFactoryImpl::new());
 
         let table_manager = TableManagerImpl::new(table_scan_factory).unwrap();
         table_manager.setup_if_not_exists(&tx).unwrap();

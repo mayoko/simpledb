@@ -253,7 +253,7 @@ impl ParserImpl {
             Ok(schema)
         } else {
             Err(anyhow!(ParserError::UnexpectedToken(
-                "expected field type (int, string)".to_string()
+                "expected field type (int, varchar)".to_string()
             )))
         }
     }

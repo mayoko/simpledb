@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use anyhow::Result as AnyhowResult;
 
@@ -21,14 +21,14 @@ use crate::{
 pub struct Executor {
     planner: Box<dyn QueryPlanner>,
     parser_factory: ParserFactory,
-    metadata_manager: Box<dyn MetadataManager>,
+    metadata_manager: Arc<dyn MetadataManager>,
 }
 
 impl Executor {
     pub fn new(
         planner: Box<dyn QueryPlanner>,
         parser_factory: ParserFactory,
-        metadata_manager: Box<dyn MetadataManager>,
+        metadata_manager: Arc<dyn MetadataManager>,
     ) -> Self {
         Self {
             planner,
@@ -45,7 +45,9 @@ impl Executor {
         let mut parser = self.parser_factory.create(cmd.to_string())?;
         let query_data = parser.parse_query()?;
         let plan = self.planner.create_plan(&query_data, tx)?;
-        plan.open_read_scan()
+        let mut scan = plan.open_read_scan()?;
+        scan.before_first()?;
+        Ok(scan)
     }
     /// create, update, delete などのクエリを実行する。影響を受けたレコードの数を返り値として返す
     pub fn exec_update_command(
@@ -129,6 +131,7 @@ impl Executor {
             tx.clone(),
         )?;
         let mut scan = plan.open_update_scan()?;
+        drop(plan);
         scan.insert()?;
         for (field, val) in data.get_fields().iter().zip(data.get_values().iter()) {
             scan.set_val(field, val)?;

@@ -26,11 +26,11 @@ impl ConcurrencyManager {
 
     // 共有ロックを取得
     pub fn slock(&mut self, block: &BlockId) -> Result<(), LockTableError> {
-        match self.locks.get(&block) {
+        match self.locks.get(block) {
             Some(_) => Ok(()),
             None => {
                 // まだ lock を取っていなかったら lock を取って登録
-                self.lock_table.slock(&block)?;
+                self.lock_table.slock(block)?;
                 self.locks.insert(block.clone(), LockType::Shared);
                 Ok(())
             }
@@ -46,7 +46,7 @@ impl ConcurrencyManager {
                 match value {
                     LockType::Shared => {
                         // すでに shared lock が取られていたら exclusive lock に変更
-                        self.lock_table.promote_to_xlock(&block)?;
+                        self.lock_table.promote_to_xlock(block)?;
                         *value = LockType::Exclusive;
                         Ok(())
                     }
@@ -57,7 +57,7 @@ impl ConcurrencyManager {
                 }
             }
             Vacant(vacant) => {
-                self.lock_table.xlock(&block)?;
+                self.lock_table.xlock(block)?;
                 vacant.insert(LockType::Exclusive);
                 Ok(())
             }

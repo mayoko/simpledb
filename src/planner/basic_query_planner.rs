@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use anyhow::Result as AnyhowResult;
 
@@ -15,7 +15,7 @@ use crate::{
 use super::query_planner::QueryPlanner;
 
 pub struct BasicQueryPalanner {
-    mdm: Box<dyn MetadataManager>,
+    mdm: Arc<dyn MetadataManager>,
     parser_factory: ParserFactory,
 }
 
@@ -64,7 +64,7 @@ impl QueryPlanner for BasicQueryPalanner {
 }
 
 impl BasicQueryPalanner {
-    pub fn new(mdm: Box<dyn MetadataManager>, parser_factory: ParserFactory) -> Self {
+    pub fn new(mdm: Arc<dyn MetadataManager>, parser_factory: ParserFactory) -> Self {
         BasicQueryPalanner {
             mdm,
             parser_factory,
